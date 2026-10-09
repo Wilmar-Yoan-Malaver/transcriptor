@@ -81,8 +81,11 @@ BLOCK = core.REC_RATE // 10  # 100 ms
 @pytest.fixture
 def recorder(tmp_path, monkeypatch):
     """Grabadora sin dispositivos reales: los bloques de audio se agregan a mano."""
+    def fake_spawn(self, key, _device):  # sin hilo de captura: los bloques se agregan a mano
+        self._chunks.setdefault(key, [])
+
     monkeypatch.setattr(core.sc, "get_microphone", lambda **_kw: object())
-    monkeypatch.setattr(core.MeetingRecorder, "_spawn", lambda self, key, _dev: self._chunks.setdefault(key, []))
+    monkeypatch.setattr(core.MeetingRecorder, "_spawn", fake_spawn)
     return core.MeetingRecorder(tmp_path, None, "Altavoces", "Micrófono", speaker_on=False, mic_on=False)
 
 
