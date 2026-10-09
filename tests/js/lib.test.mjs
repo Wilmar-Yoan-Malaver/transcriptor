@@ -54,3 +54,33 @@ test("pageNumbers abrevia con … y siempre muestra primera y última", () => {
   assert.deepEqual(lib.pageNumbers(6, 20), [1, "…", 5, 6, 7, "…", 20]);
   assert.deepEqual(lib.pageNumbers(20, 20), [1, "…", 19, 20]);
 });
+
+// --- Seguridad: nada de lo que viene de afuera (títulos de YouTube, nombres de archivo,
+// transcripciones) puede convertirse en HTML o código dentro de la interfaz.
+
+const XSS = [
+  `<script>alert(1)</script>`,
+  `<img src=x onerror="alert(1)">`,
+  `" onmouseover="alert(1)`,
+  `' onmouseover='alert(1)`,
+  `</div><iframe src="javascript:alert(1)">`,
+  `&lt;script&gt;`,
+];
+
+test("esc neutraliza etiquetas y atributos inyectados", () => {
+  for (const payload of XSS) {
+    const out = lib.esc(payload);
+    assert.doesNotMatch(out, /[<>"']/, payload);
+    assert.doesNotMatch(out, /&(?!amp;|lt;|gt;|quot;|#39;)/, payload);  // ningún & sin escapar
+  }
+  assert.equal(lib.esc(`<b>"Hola" & 'adiós'</b>`), "&lt;b&gt;&quot;Hola&quot; &amp; &#39;adiós&#39;&lt;/b&gt;");
+  assert.equal(lib.esc(42), "42");
+});
+
+test("isBase64 solo acepta miniaturas base64 válidas", () => {
+  assert.ok(lib.isBase64("iVBORw0KGgoAAAANSUhEUgAA+/8="));
+  for (const bad of [`x" onerror="alert(1)`, "abc<def", "javascript:alert(1)", "a b", "", null, undefined, 42,
+                     "abc===", "data:image/png;base64,AAAA"]) {
+    assert.equal(lib.isBase64(bad), false, String(bad));
+  }
+});

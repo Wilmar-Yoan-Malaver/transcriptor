@@ -1,5 +1,8 @@
 # Herramientas de desarrollo (no hacen falta para usar la app)
 -r requirements.txt
-pytest
-ruff
-pyinstaller
+pytest==9.1.1
+ruff==0.17.0
+pyinstaller==6.22.3
+# Seguridad
+bandit==1.9.4
+pip-audit==2.10.1

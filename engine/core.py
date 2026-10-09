@@ -496,8 +496,25 @@ class MeetingRecorder:
             vcodec = ["-c:v", "copy"] if raw_video else ["-vn"]
             cmd = [FFMPEG, "-y", "-v", "error", *inputs, *vcodec,
                    "-c:a", "aac", "-b:a", "128k", str(mp4_path)]
-            subprocess.run(cmd, creationflags=NO_WINDOW)
+            r = subprocess.run(cmd, capture_output=True, creationflags=NO_WINDOW)
+            if r.returncode != 0 or not mp4_path.exists() or mp4_path.stat().st_size == 0:
+                return self._rescue(raw_video, wav_path, mp4_path, r.stderr)
         return mp4_path if mp4_path.exists() else None
+
+    def _rescue(self, raw_video, wav_path, failed_mp4, stderr):
+        """ffmpeg no pudo unir video y audio (disco lleno, archivo dañado…): se conservan los dos
+        por separado en la carpeta de salida. Sin esto, cleanup() los borraría y se perdería todo."""
+        detail = (stderr or b"").decode(errors="ignore").strip()[-300:]
+        self.errors.append("No se pudo unir el video y el audio" + (f" ({detail})" if detail else "")
+                           + ". Se guardaron por separado para no perder la grabación.")
+        failed_mp4.unlink(missing_ok=True)  # pudo quedar a medias
+        saved = []
+        for src, suffix in ((raw_video, " (video).mp4"), (wav_path, " (audio).wav")):
+            if src and Path(src).exists():
+                target = self.out_dir / f"Grabación {self.stamp}{suffix}"
+                shutil.move(str(src), target)
+                saved.append(target)
+        return saved[0] if saved else None
 
     def cleanup(self):
         shutil.rmtree(self.tmp, ignore_errors=True)
@@ -619,6 +636,18 @@ class Transcriber:
         return seg.start, seg.end, text
 
 
+def atomic_write_text(path, text):
+    """Escribe todo o nada: primero un temporal y luego lo reemplaza de una vez (os.replace).
+    Si la app se cierra a mitad, queda el archivo anterior intacto, nunca uno cortado."""
+    path = Path(path)
+    tmp = path.with_name(f".{path.name}.tmp")
+    try:
+        tmp.write_text(text, encoding="utf-8")
+        os.replace(tmp, path)
+    finally:
+        tmp.unlink(missing_ok=True)
+
+
 def write_transcript(out_dir, title, segments, timestamps=True):
     """Guarda .txt y .srt a partir de [(inicio, fin, texto)]."""
     out_dir = Path(out_dir)
@@ -626,9 +655,9 @@ def write_transcript(out_dir, title, segments, timestamps=True):
     name = safe_name(title)
     txt, srt = out_dir / f"{name}.txt", out_dir / f"{name}.srt"
     lines = [f"[{short_time(s)}] {t}" if timestamps else t for s, _e, t in segments]
-    txt.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    srt.write_text("\n".join(f"{i}\n{srt_time(s)} --> {srt_time(e)}\n{t}\n"
-                             for i, (s, e, t) in enumerate(segments, 1)), encoding="utf-8")
+    atomic_write_text(txt, "\n".join(lines) + "\n")
+    atomic_write_text(srt, "\n".join(f"{i}\n{srt_time(s)} --> {srt_time(e)}\n{t}\n"
+                                     for i, (s, e, t) in enumerate(segments, 1)))
     return txt, srt
 
 

@@ -37,8 +37,13 @@ const withExt = (p, ext) => p.replace(/\.[^.\\/]+$/, "") + ext;
 
 const jobId = (prefix) => prefix + "-" + Math.random().toString(36).slice(2, 9);
 const srcKey = (s) => `${s.kind}:${s.kind === "monitor" ? s.index : s.hwnd}`;
-const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+/** Escapa texto para insertarlo en HTML (contenido o atributos con comillas simples o dobles). */
+const esc = (s) => String(s).replace(/[&<>"']/g,
+  (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const textLines = (text) => text.split(/\r?\n/).filter((l) => l.trim());
+
+/** Solo caracteres base64: así una miniatura nunca puede inyectar HTML en <img src="…">. */
+const isBase64 = (s) => typeof s === "string" && s.length > 0 && /^[A-Za-z0-9+/]+={0,2}$/.test(s);
 
 /** Cantidad de páginas para `total` elementos (mínimo 1). */
 const pageCount = (total, size = PAGE_SIZE) => Math.max(1, Math.ceil(total / size));
@@ -56,5 +61,5 @@ function pageNumbers(page, pages) {
 
 if (typeof module !== "undefined") {
   module.exports = { PAGE_SIZE, NAME_MAX, shortName, fmtDur, fmtSize, fmtDate, baseName, dirName, withExt,
-                     jobId, srcKey, esc, textLines, pageCount, pageNumbers };
+                     jobId, srcKey, esc, textLines, isBase64, pageCount, pageNumbers };
 }

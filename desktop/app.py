@@ -6,6 +6,7 @@ no le quita fluidez al resto del PC.
 """
 
 import json
+import logging
 import os
 import subprocess
 import sys
@@ -37,6 +38,36 @@ BAR_TITLE = "Transcriptor · grabando"
 BAR_SIZE, BAR_COMPACT = (500, 62), (250, 62)
 NO_WINDOW, BELOW_NORMAL = 0x08000000, 0x00004000
 MEDIA_EXT = {".mp4", ".mkv", ".mov", ".webm", ".avi", ".mp3", ".m4a", ".wav"}
+
+# --- Seguridad: lo que la interfaz (HTML/JS) puede pedirle a Python.
+TEXT_EXT = {".txt", ".srt"}
+ALLOWED_EXT = MEDIA_EXT | TEXT_EXT        # nunca .exe, .bat, .ps1, .lnk…
+MAX_TEXT_BYTES = 50 * 2**20                # transcripciones de hasta 50 MB
+MAX_NAME = 150
+RESERVED_NAMES = {"CON", "PRN", "AUX", "NUL", *(f"COM{i}" for i in range(1, 10)),
+                  *(f"LPT{i}" for i in range(1, 10))}
+# Órdenes al motor que la interfaz usa directamente (grabar y detener van por métodos propios).
+UI_ENGINE_COMMANDS = {"list_sources", "list_devices", "transcribe", "youtube", "cancel_transcription",
+                      "media_info", "save_live"}
+# Rutas completas: un powershell.exe o explorer.exe falso en otra carpeta no puede suplantarlos.
+WINDIR = Path(os.environ.get("SystemRoot", r"C:\Windows"))
+POWERSHELL = WINDIR / "System32" / "WindowsPowerShell" / "v1.0" / "powershell.exe"
+EXPLORER = WINDIR / "explorer.exe"
+
+log = logging.getLogger("transcriptor")
+
+
+def valid_config_value(key, value):
+    """El valor tiene el mismo tipo que el valor por defecto (o es uno de los casos especiales)."""
+    default = DEFAULTS[key]
+    if key in ("speaker", "mic"):
+        return value is None or isinstance(value, str)
+    if key == "barPos":
+        return value is None or (isinstance(value, list) and len(value) == 2
+                                 and all(type(v) is int for v in value))
+    if key == "outputDir":
+        return isinstance(value, str) and Path(value).is_absolute()
+    return type(value) is type(default)  # bool no pasa por int ni al revés
 
 
 def glob_escape(name):
@@ -76,8 +107,14 @@ class Config(dict):
             pass
 
     def save(self):
-        DATA.mkdir(parents=True, exist_ok=True)
-        CONFIG_FILE.write_text(json.dumps(self, ensure_ascii=False, indent=2), encoding="utf-8")
+        """Escritura atómica: un cierre a mitad nunca deja el archivo de configuración cortado."""
+        CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
+        tmp = CONFIG_FILE.with_name(CONFIG_FILE.name + ".tmp")
+        try:
+            tmp.write_text(json.dumps(self, ensure_ascii=False, indent=2), encoding="utf-8")
+            os.replace(tmp, CONFIG_FILE)
+        finally:
+            tmp.unlink(missing_ok=True)
 
 
 class Engine:
@@ -426,9 +463,13 @@ class Api:
                 "version": VERSION, "engine": str(ENGINE), "python": sys.executable}
 
     def set_config(self, key, value):
-        if key in DEFAULTS:
-            self._app.cfg[key] = value
-            self._app.cfg.save()
+        """Solo claves conocidas y con el tipo esperado (texto, número, sí/no…)."""
+        if key not in DEFAULTS or not valid_config_value(key, value):
+            log.warning("Configuración rechazada: %r = %r", key, value)
+            return False
+        self._app.cfg[key] = value
+        self._app.cfg.save()
+        return True
 
     def reset_config(self):
         keep = {k: self._app.cfg[k] for k in ("speaker", "mic")}
@@ -438,6 +479,15 @@ class Api:
         return dict(self._app.cfg)
 
     def send(self, msg):
+        """Reenvía al motor solo las órdenes que usa la interfaz, con la carpeta de salida real."""
+        if not isinstance(msg, dict) or msg.get("cmd") not in UI_ENGINE_COMMANDS:
+            log.warning("Orden rechazada: %r", msg)
+            return False
+        msg = dict(msg)
+        if msg["cmd"] in ("transcribe", "youtube"):
+            msg["out_dir"] = str(self._root())  # las transcripciones solo se guardan en la carpeta
+        if msg["cmd"] == "media_info" and not self._guard(msg.get("path")):
+            return False
         return self._app.engine.send(msg)
 
     def toggle_audio(self, key):
@@ -501,22 +551,50 @@ class Api:
         items.sort(key=lambda i: i["date"], reverse=True)
         return {"folder": str(folder), "items": items}
 
+    # ------------------------------------------------------------- seguridad
+    def _root(self):
+        return Path(self._app.cfg["outputDir"]).resolve()
+
+    def _guard(self, path, *, allowed=ALLOWED_EXT):
+        """Ruta segura o None. La interfaz solo puede tocar archivos que existen DIRECTAMENTE en
+        la carpeta de grabaciones y con extensión de medio o texto: nunca programas ni archivos
+        de otras carpetas (rutas con "..", enlaces que apuntan afuera, etc.)."""
+        try:
+            p = Path(path).resolve()  # resuelve "..", mayúsculas y enlaces simbólicos
+            ok = p.parent == self._root() and p.suffix.lower() in allowed and p.is_file()
+        except (OSError, TypeError, ValueError):
+            ok = False
+        if not ok:
+            log.warning("Ruta rechazada: %r", path)
+            return None
+        return p
+
+    # ------------------------------------------------------------- archivos
     def file_info(self, path):
-        p = Path(path)
-        if not p.exists():
+        p = self._guard(path)
+        if not p:
             return None
         txt = p.with_name(p.stem + ".txt")
         return {"created": datetime.fromtimestamp(p.stat().st_ctime).isoformat(),
                 "txt": str(txt) if txt.exists() else None}
 
     def read_text(self, path):
-        return Path(path).read_text(encoding="utf-8", errors="replace")
+        p = self._guard(path, allowed=TEXT_EXT)
+        if not p or p.stat().st_size > MAX_TEXT_BYTES:
+            return ""
+        return p.read_text(encoding="utf-8", errors="replace")
 
     def rename(self, path, new_name):
-        p = Path(path)
-        clean = "".join("_" if c in '<>:"/\\|?*' else c for c in new_name).strip(" .")
+        p = self._guard(path)
+        if not p:
+            return {"error": "Solo se pueden renombrar archivos de la carpeta de grabaciones."}
+        clean = "".join("_" if c in '<>:"/\\|?*' or ord(c) < 32 else c for c in str(new_name)).strip(" .")
         if not clean:
             return {"error": "El nombre no puede quedar vacío."}
+        if len(clean) > MAX_NAME:
+            return {"error": f"El nombre puede tener como máximo {MAX_NAME} caracteres."}
+        if clean.split(".")[0].upper() in RESERVED_NAMES:
+            return {"error": "Ese nombre está reservado por Windows."}
         target = p.with_name(clean + p.suffix)
         if target.exists() and not os.path.samefile(target, p):  # mismo archivo = solo cambió mayúsculas
             return {"error": "Ya existe un archivo con ese nombre."}
@@ -533,25 +611,27 @@ class Api:
 
     def delete_recording(self, path):
         """Envía a la Papelera la grabación y su transcripción (.txt/.srt) con el mismo nombre."""
-        p = Path(path)
+        p = self._guard(path)
+        if not p:
+            return {"error": "El archivo ya no existe o no es de la carpeta de grabaciones."}
         files = [f for f in p.parent.glob(f"{glob_escape(p.stem)}.*")
-                 if f.stem.lower() == p.stem.lower() and f.suffix.lower() in MEDIA_EXT | {".txt", ".srt"}]
-        if not files:
-            return {"error": "El archivo ya no existe."}
+                 if f.stem.lower() == p.stem.lower() and f.suffix.lower() in ALLOWED_EXT]
         if not winutil.send_to_recycle_bin(files):
             return {"error": "No se pudo eliminar (¿está abierto en otro programa?)."}
         return {"deleted": [f.name for f in files]}
 
     def open_path(self, path):
-        os.startfile(path)
+        p = self._guard(path)
+        if p:
+            os.startfile(p)  # solo medios/texto de la carpeta: nunca un programa
 
     def reveal(self, path):
-        p = Path(path)
-        if p.is_file():
-            subprocess.Popen(["explorer.exe", f"/select,{p}"])
-        else:
-            p.mkdir(parents=True, exist_ok=True)
-            os.startfile(p)
+        root = self._root()
+        if Path(path).resolve() == root:  # "Abrir carpeta"
+            root.mkdir(parents=True, exist_ok=True)
+            os.startfile(root)
+        elif p := self._guard(path):
+            subprocess.Popen([str(EXPLORER), f"/select,{p}"])
 
     def create_shortcuts(self):
         """Accesos directos en el Escritorio y en el menú Inicio que apuntan a esta copia de la app."""
@@ -560,6 +640,7 @@ class Api:
         else:
             target = Path(sys.executable).with_name("pythonw.exe")
             args = f'"{ROOT / "Transcriptor.pyw"}"'
+
         def q(value):  # texto entre comillas simples para PowerShell
             return str(value).replace("'", "''")
 
@@ -570,7 +651,7 @@ class Api:
             f"$s.IconLocation='{q(UI / 'icon.ico')},0';$s.Description='Graba, transcribe y comparte';"
             f"$s.Save();"
             for folder in ("Desktop", "Programs"))
-        r = subprocess.run(["powershell", "-NoProfile", "-Command", script], creationflags=NO_WINDOW)
+        r = subprocess.run([str(POWERSHELL), "-NoProfile", "-Command", script], creationflags=NO_WINDOW)
         return r.returncode == 0
 
     def open_log(self):
@@ -582,8 +663,11 @@ class Api:
 
     def copy_file(self, path):
         """Deja el archivo en el portapapeles para pegarlo en Teams, WhatsApp, correo…"""
-        lit = path.replace("'", "''")
-        r = subprocess.run(["powershell", "-NoProfile", "-Command", f"Set-Clipboard -LiteralPath '{lit}'"],
+        p = self._guard(path)
+        if not p:
+            return False
+        lit = str(p).replace("'", "''")  # comillas simples de PowerShell: no se puede inyectar código
+        r = subprocess.run([str(POWERSHELL), "-NoProfile", "-Command", f"Set-Clipboard -LiteralPath '{lit}'"],
                            creationflags=NO_WINDOW)
         return r.returncode == 0
 

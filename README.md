@@ -52,6 +52,26 @@ npm test
   las funciones puras de `ui/lib.js` (`node --test`).
 - GitHub Actions (`.github/workflows/calidad.yml`) corre todo en cada push a `main` y en cada PR.
 
+## Seguridad e integridad de datos
+
+- **La interfaz no puede tocar nada fuera de la carpeta de grabaciones.** Las funciones de
+  `desktop/app.py` que abren, leen, renombran, copian o borran archivos solo aceptan archivos de
+  audio, video o texto que estén directamente en esa carpeta, nunca programas ni rutas con `..`.
+  El motor solo recibe las órdenes que usa la interfaz, y la configuración rechaza claves
+  desconocidas y tipos incorrectos.
+- **No se pierden grabaciones:** si falla la unión de video y audio, se guardan los dos por
+  separado. Las transcripciones y la configuración se escriben de forma atómica (primero un
+  temporal y después se reemplaza), así que un corte de luz no deja archivos a medias.
+- **Interfaz:** todo texto externo pasa por `esc()` y las miniaturas se validan con `isBase64()`.
+- **Pruebas:** `tests/test_security.py`, `tests/test_integrity.py`, los mensajes malformados en
+  `tests/test_engine_protocol.py` y las pruebas XSS en `tests/js/lib.test.mjs`.
+- **Revisiones automáticas** (`.github/workflows/seguridad.yml`, en cada PR y cada lunes):
+  `pip-audit` (vulnerabilidades conocidas), `bandit` (análisis del código Python), `npm audit` y
+  CodeQL. Dependabot (`.github/dependabot.yml`) propone las actualizaciones. Las versiones de
+  `requirements.txt` están fijadas.
+- **Empaquetado:** se verifica la huella SHA-256 del Python descargado y se genera
+  `Transcriptor-portable.zip.sha256`, que sirve para comprobar el zip con `Get-FileHash`.
+
 ## Empaquetar
 
 ### Portable (recomendado; Smart App Control no la bloquea)
