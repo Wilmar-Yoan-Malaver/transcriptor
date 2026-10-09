@@ -7,3 +7,6 @@ __pycache__/
 
 # Acceso directo local (tiene rutas de este PC)
 *.lnk
+
+# Configuración local del editor/asistente
+.claude/

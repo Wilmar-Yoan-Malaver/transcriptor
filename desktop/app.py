@@ -373,8 +373,10 @@ class App:
         self.main.events.shown += lambda: winutil.style_titlebar(winutil.hwnd_of(self.main))
         self.main.events.closing += self.on_closing
         self.main.events.closed += self.on_closed
-        webview.start(self.engine.start, gui="edgechromium", private_mode=False,
-                      storage_path=str(DATA / "webview"), icon=str(UI / "icon.ico"))
+        # private_mode: perfil en memoria, sin caché en disco. Con caché persistente, WebView2
+        # podía servir un index.html viejo junto a un app.js nuevo tras actualizar la app.
+        webview.start(self.engine.start, gui="edgechromium", private_mode=True,
+                      icon=str(UI / "icon.ico"))
 
 
 class BarApi:

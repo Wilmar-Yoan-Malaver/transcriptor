@@ -105,7 +105,6 @@
 
     <!-- ============================================================== transcribir -->
     <section class="view fill hidden" id="view-transcribe">
-      <div class="crumbs hidden" id="txCrumbs"><button class="back"><i class="ic">&#xE72B;</i><span></span></button><span>›</span><span></span></div>
       <h1>Transcribir</h1>
       <p class="sub">Convierte un video, un audio o un link de YouTube en texto. Todo se procesa en tu PC.</p>
       <div class="card">
@@ -147,14 +146,35 @@
       </div>
     </section>
 
+    <!-- ============================================ ver una transcripción guardada -->
+    <section class="view fill hidden" id="view-transcript">
+      <div class="crumbs"><button class="back" id="vwBack"><i class="ic">&#xE72B;</i><span id="vwBackLabel">Historial</span></button><span>›</span><span id="vwCrumb"></span></div>
+      <h1 id="vwTitle"></h1>
+      <p class="sub" id="vwInfo"></p>
+      <div class="card" style="flex:1; display:flex; flex-direction:column; min-height:0">
+        <div class="transcript" id="vwText"></div>
+      </div>
+      <div class="row-flex" style="margin-top:12px">
+        <button class="btn" id="vwCopy"><i class="ic">&#xE8C8;</i>Copiar texto</button>
+        <button class="btn" id="vwOpenTxt"><i class="ic">&#xE8A5;</i>Abrir .txt</button>
+        <button class="btn" id="vwOpenSrt" title="Subtítulos para el video"><i class="ic">&#xE7F0;</i>Subtítulos .srt</button>
+        <button class="btn" id="vwFolder"><i class="ic">&#xE838;</i>Abrir carpeta</button>
+      </div>
+    </section>
+
     <!-- ================================================================= historial -->
     <section class="view hidden" id="view-history">
       <div class="row-flex">
-        <div class="grow"><h1>Historial</h1><p class="sub" id="histFolder" style="margin-bottom:0"></p></div>
+        <div class="grow">
+          <h1>Historial <span class="count-badge" id="histCount"></span></h1>
+          <p class="sub" id="histFolder" style="margin-bottom:0"></p>
+        </div>
         <button class="icon-btn" id="histRefresh" title="Actualizar">&#xE72C;</button>
         <button class="btn" id="histOpen"><i class="ic">&#xE838;</i>Abrir carpeta</button>
       </div>
-      <div class="list" id="histList" style="margin-top:18px"></div>
+      <div class="list-head hidden" id="histRange"></div>
+      <div class="list" id="histList"></div>
+      <nav class="pager hidden" id="histPager" aria-label="Páginas del historial"></nav>
       <div class="placeholder hidden" id="histEmpty" style="padding:80px 0">
         <i class="ic">&#xE81C;</i>Todavía no hay grabaciones ni transcripciones.
         <button class="btn primary" data-goto="home">Hacer una grabación</button>
