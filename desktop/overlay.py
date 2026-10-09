@@ -117,14 +117,14 @@ class BorderOverlay:
                 user32.ShowWindow(self.hwnd, 0)  # SW_HIDE
                 self._last = None
                 return
-            l, t, r, b = winutil.window_rect(self._target)
-            rect = (l - PAD, t - PAD, r + PAD, b + PAD)
+            left, top, right, bottom = winutil.window_rect(self._target)
+            rect = (left - PAD, top - PAD, right + PAD, bottom + PAD)
         else:
             rect = self._rect
         if rect != self._last:
             self._last = rect
-            l, t, r, b = rect
-            winutil.move_topmost(self.hwnd, l, t, r - l, b - t)
+            left, top, right, bottom = rect
+            winutil.move_topmost(self.hwnd, left, top, right - left, bottom - top)
             user32.InvalidateRect(self.hwnd, None, True)
 
     def _wndproc(self, hwnd, msg, wparam, lparam):
@@ -154,8 +154,8 @@ class BorderOverlay:
         user32.FillRect(hdc, ctypes.byref(rc), key)
         w, h = rc.right, rc.bottom
 
-        def fill(l, t, r, b):
-            user32.FillRect(hdc, ctypes.byref(wintypes.RECT(l, t, r, b)), pen)
+        def fill(left, top, right, bottom):
+            user32.FillRect(hdc, ctypes.byref(wintypes.RECT(left, top, right, bottom)), pen)
 
         for x in range(0, w, DASH + GAP):  # arriba y abajo
             fill(x, 0, min(x + DASH, w), THICK)

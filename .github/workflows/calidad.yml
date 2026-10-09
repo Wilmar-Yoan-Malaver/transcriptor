@@ -1,0 +1,44 @@
+# Revisa la calidad del código en cada push y en cada pull request:
+# linters (ruff para Python, ESLint para la interfaz) y pruebas automáticas.
+name: Calidad
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  python:
+    name: Python · ruff + pytest
+    runs-on: windows-latest  # la app usa APIs de Windows (captura, audio, Papelera)
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+          cache: pip
+          cache-dependency-path: requirements*.txt
+      - name: Instalar dependencias
+        run: python -m pip install -r requirements-dev.txt
+      - name: Linter (ruff)
+        run: python -m ruff check .
+      - name: Pruebas (pytest)
+        run: python -m pytest -q
+
+  interfaz:
+    name: Interfaz · ESLint + pruebas JS
+    runs-on: ubuntu-latest  # lib.js no depende de Windows
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Linter (ESLint)
+        run: npm run lint
+      - name: Pruebas (node --test)
+        run: npm test

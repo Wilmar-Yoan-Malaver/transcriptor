@@ -1,0 +1,20 @@
+# Configuración de herramientas de calidad (no es un paquete instalable).
+
+[tool.ruff]
+line-length = 110
+target-version = "py313"
+extend-exclude = ["dist"]
+
+[tool.ruff.lint]
+# E/W: estilo PEP 8 · F: errores (nombres sin usar, imports…) · B: bugs comunes
+# I: orden de imports · UP: sintaxis moderna de Python
+select = ["E", "W", "F", "B", "I", "UP"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["core", "engine", "app", "winutil", "overlay"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "slow: pruebas que cargan modelos de Whisper (se omiten con -m 'not slow')",
+]
