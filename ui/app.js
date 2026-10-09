@@ -30,11 +30,7 @@ const OPTIONS = {
 };
 
 const EXCLUDE = ["Transcriptor", "Transcriptor · grabando"];
-const PAGE_SIZE = 15;   // elementos por página del historial
-const NAME_MAX = 20;    // caracteres visibles de un nombre de archivo (el completo va en el tooltip)
-
-/** "Sesión N. 5 Conexión E…" — corta nombres largos; el completo se muestra al pasar el mouse. */
-const shortName = (name) => (name.length > NAME_MAX ? name.slice(0, NAME_MAX).trimEnd() + "…" : name);
+// Funciones puras (fmtDur, shortName, pageNumbers…) y PAGE_SIZE/NAME_MAX: ver lib.js.
 
 /** Pone el nombre corto en el elemento y el completo como tooltip. */
 function setName(el, name) {
@@ -105,26 +101,6 @@ function toast(text, glyph = G.info) {
   toast.timer = setTimeout(() => t.classList.remove("show"), 3500);
 }
 
-const fmtDur = (s) => {
-  s = Math.max(0, Math.floor(s || 0));
-  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
-  const p = (n) => String(n).padStart(2, "0");
-  return h ? `${h}:${p(m)}:${p(sec)}` : `${p(m)}:${p(sec)}`;
-};
-const fmtSize = (b) => b >= 1 << 30 ? (b / (1 << 30)).toFixed(1) + " GB"
-  : b >= 1 << 20 ? (b / (1 << 20)).toFixed(1) + " MB" : Math.round(b / 1024) + " KB";
-const fmtDate = (iso) => {
-  const d = new Date(iso);
-  const day = d.toLocaleDateString("es-CO", { day: "2-digit", month: "short", year: "numeric" }).replace(".", "");
-  return `${day} · ${d.toLocaleTimeString("es-CO", { hour: "numeric", minute: "2-digit" })}`;
-};
-const baseName = (p) => p.split(/[\\/]/).pop().replace(/\.[^.]+$/, "");
-const dirName = (p) => p.replace(/[\\/][^\\/]*$/, "");
-const withExt = (p, ext) => p.replace(/\.[^.\\/]+$/, "") + ext;
-const jobId = (prefix) => prefix + "-" + Math.random().toString(36).slice(2, 9);
-const srcKey = (s) => `${s.kind}:${s.kind === "monitor" ? s.index : s.hwnd}`;
-const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-const textLines = (text) => text.split(/\r?\n/).filter((l) => l.trim());
 const liveLine = (seg) => (S().config.timestamps ? `[${fmtDur(seg.start)}] ${seg.text}` : seg.text);
 
 /** Línea "[mm:ss] texto" con el tiempo separado. */
@@ -310,17 +286,6 @@ function renderTranscribe(s) {
   $("#txOpenSrt").disabled = !t.srt;
 }
 
-/** Números de página a mostrar: 1 … 4 5 [6] 7 8 … 20 */
-function pageNumbers(page, pages) {
-  const set = new Set([1, pages, page - 1, page, page + 1].filter((n) => n >= 1 && n <= pages));
-  const sorted = [...set].sort((a, b) => a - b), out = [];
-  sorted.forEach((n, i) => {
-    if (i && n - sorted[i - 1] > 1) out.push("…");
-    out.push(n);
-  });
-  return out;
-}
-
 function renderPager(page, pages) {
   const nav = $("#histPager");
   show(nav, pages > 1);
@@ -359,7 +324,7 @@ function renderViewer(s) {
 function renderHistory(s) {
   const { folder, items } = s.history;
   const total = items.length;
-  const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const pages = pageCount(total);
   const page = Math.min(Math.max(1, s.history.page || 1), pages);
   const first = (page - 1) * PAGE_SIZE;
   const visible = items.slice(first, first + PAGE_SIZE);
@@ -605,7 +570,7 @@ async function copyText(text) {
 /** Recarga la lista conservando la página (ajustada si ya no existe, p. ej. tras eliminar). */
 async function loadHistory() {
   const r = await api.history();
-  const pages = Math.max(1, Math.ceil(r.items.length / PAGE_SIZE));
+  const pages = pageCount(r.items.length);
   store.set({ history: { ...r, page: Math.min(S().history.page || 1, pages) } });
 }
 

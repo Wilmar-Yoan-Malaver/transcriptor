@@ -1,0 +1,14 @@
+{
+  "name": "transcriptor-ui",
+  "private": true,
+  "description": "Herramientas de calidad para la interfaz (ui/). La app no necesita Node para funcionar.",
+  "scripts": {
+    "lint": "eslint ui tests/js",
+    "test": "node --test \"tests/js/*.test.mjs\""
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.0",
+    "eslint": "^9.39.0",
+    "globals": "^16.5.0"
+  }
+}

@@ -4,6 +4,11 @@ dist/
 # Python
 __pycache__/
 *.pyc
+.pytest_cache/
+.ruff_cache/
+
+# Node (herramientas de calidad de la interfaz)
+node_modules/
 
 # Acceso directo local (tiene rutas de este PC)
 *.lnk
