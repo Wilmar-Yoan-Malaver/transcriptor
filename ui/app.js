@@ -30,6 +30,13 @@ const OPTIONS = {
 };
 
 const EXCLUDE = ["Transcriptor", "Transcriptor · grabando"];
+// Funciones puras (fmtDur, shortName, pageNumbers…) y PAGE_SIZE/NAME_MAX: ver lib.js.
+
+/** Pone el nombre corto en el elemento y el completo como tooltip. */
+function setName(el, name) {
+  el.textContent = shortName(name);
+  el.title = name;
+}
 let api = null;
 
 // =========================================================================== store
@@ -69,10 +76,12 @@ const store = createStore({
   picker: { open: false, tab: "monitor", monitor: [], window: [], thumbs: {}, selected: null, loading: false },
   txBusy: false,
   tx: { mode: "file", job: null, running: false, showProgress: false, status: "", pct: null, lines: [],
-        txt: null, srt: null, back: null, backLabel: "", crumb: "" },
+        txt: null, srt: null },
+  // Transcripción guardada abierta desde el Historial o la ficha (pantalla de solo lectura).
+  viewer: { txt: null, srt: null, lines: [], back: null, backLabel: "Historial" },
   det: { path: null, justRecorded: false, info: null, infoError: null, created: null, txt: null, job: null,
          req: null, transcribeWhenLoaded: false, tx: DET_TX_IDLE, preview: { title: "Transcripción", lines: [] } },
-  history: { folder: "", items: [] },
+  history: { folder: "", items: [], page: 1 },
   version: "",
   enginePath: "",
 });
@@ -92,26 +101,6 @@ function toast(text, glyph = G.info) {
   toast.timer = setTimeout(() => t.classList.remove("show"), 3500);
 }
 
-const fmtDur = (s) => {
-  s = Math.max(0, Math.floor(s || 0));
-  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
-  const p = (n) => String(n).padStart(2, "0");
-  return h ? `${h}:${p(m)}:${p(sec)}` : `${p(m)}:${p(sec)}`;
-};
-const fmtSize = (b) => b >= 1 << 30 ? (b / (1 << 30)).toFixed(1) + " GB"
-  : b >= 1 << 20 ? (b / (1 << 20)).toFixed(1) + " MB" : Math.round(b / 1024) + " KB";
-const fmtDate = (iso) => {
-  const d = new Date(iso);
-  const day = d.toLocaleDateString("es-CO", { day: "2-digit", month: "short", year: "numeric" }).replace(".", "");
-  return `${day} · ${d.toLocaleTimeString("es-CO", { hour: "numeric", minute: "2-digit" })}`;
-};
-const baseName = (p) => p.split(/[\\/]/).pop().replace(/\.[^.]+$/, "");
-const dirName = (p) => p.replace(/[\\/][^\\/]*$/, "");
-const withExt = (p, ext) => p.replace(/\.[^.\\/]+$/, "") + ext;
-const jobId = (prefix) => prefix + "-" + Math.random().toString(36).slice(2, 9);
-const srcKey = (s) => `${s.kind}:${s.kind === "monitor" ? s.index : s.hwnd}`;
-const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-const textLines = (text) => text.split(/\r?\n/).filter((l) => l.trim());
 const liveLine = (seg) => (S().config.timestamps ? `[${fmtDur(seg.start)}] ${seg.text}` : seg.text);
 
 /** Línea "[mm:ss] texto" con el tiempo separado. */
@@ -149,7 +138,8 @@ const show = (el, visible) => el.classList.toggle("hidden", !visible);
 
 function renderNav(s) {
   $$("main .view").forEach((v) => show(v, v.id === `view-${s.view}`));
-  const navKey = s.view === "details" ? "history" : s.view;
+  // La ficha y "ver transcripción" son pantallas del Historial.
+  const navKey = ["details", "transcript"].includes(s.view) ? "history" : s.view;
   $$("#nav button").forEach((b) => b.classList.toggle("active", b.dataset.nav === navKey));
   show($("#navLive"), s.rec.state !== "idle");
 }
@@ -280,9 +270,6 @@ function renderRecording(s) {
 
 function renderTranscribe(s) {
   const t = s.tx;
-  show($("#txCrumbs"), !!t.back);
-  $("#txCrumbs .back span").textContent = t.backLabel;
-  $("#txCrumbs > span:last-child").textContent = t.crumb;
   $$("[data-src]").forEach((b) => b.classList.toggle("on", b.dataset.src === t.mode));
   $("#txInput").placeholder = t.mode === "url"
     ? "Pega el link de YouTube (https://www.youtube.com/watch?v=…)" : "Elige un archivo (MP4, MKV, MOV, MP3, WAV…)";
@@ -299,19 +286,69 @@ function renderTranscribe(s) {
   $("#txOpenSrt").disabled = !t.srt;
 }
 
+function renderPager(page, pages) {
+  const nav = $("#histPager");
+  show(nav, pages > 1);
+  nav.innerHTML = "";
+  if (pages <= 1) return;
+  const btn = (label, target, { on = false, disabled = false, aria = "" } = {}) => {
+    const b = document.createElement("button");
+    b.innerHTML = label;
+    b.className = on ? "on" : "";
+    b.disabled = disabled;
+    if (aria) b.setAttribute("aria-label", aria);
+    if (on) b.setAttribute("aria-current", "page");
+    b.addEventListener("click", () => setHistoryPage(target));
+    nav.appendChild(b);
+  };
+  btn(`<i class="ic"></i>Anterior`, page - 1, { disabled: page === 1, aria: "Página anterior" });
+  for (const n of pageNumbers(page, pages)) {
+    if (n === "…") nav.insertAdjacentHTML("beforeend", `<span class="gap">…</span>`);
+    else btn(String(n), n, { on: n === page, aria: `Página ${n}` });
+  }
+  btn(`Siguiente<i class="ic"></i>`, page + 1, { disabled: page === pages, aria: "Página siguiente" });
+}
+
+/** Transcripción guardada (solo lectura): no comparte nada con la página "Transcribir". */
+function renderViewer(s) {
+  const v = s.viewer;
+  if (!v.txt) return;
+  const name = baseName(v.txt);
+  $("#vwBackLabel").textContent = v.backLabel;
+  setName($("#vwCrumb"), name);
+  setName($("#vwTitle"), name);
+  $("#vwInfo").textContent = `${v.lines.length} ${v.lines.length === 1 ? "línea" : "líneas"} · ${dirName(v.txt)}`;
+  syncLines($("#vwText"), v.lines);
+}
+
 function renderHistory(s) {
   const { folder, items } = s.history;
+  const total = items.length;
+  const pages = pageCount(total);
+  const page = Math.min(Math.max(1, s.history.page || 1), pages);
+  const first = (page - 1) * PAGE_SIZE;
+  const visible = items.slice(first, first + PAGE_SIZE);
+
   $("#histFolder").textContent = folder;
-  show($("#histEmpty"), !items.length);
+  $("#histCount").textContent = total ? String(total) : "";
+  $("#histCount").title = `${total} ${total === 1 ? "elemento" : "elementos"} en la carpeta`;
+  show($("#histRange"), total > 0);
+  const recordings = items.filter((i) => i.media).length;
+  $("#histRange").textContent = `Mostrando ${first + 1}–${first + visible.length} de ${total} · `
+    + `${recordings} ${recordings === 1 ? "grabación" : "grabaciones"}`
+    + (total - recordings ? ` y ${total - recordings} ${total - recordings === 1 ? "transcripción" : "transcripciones"}` : "");
+  show($("#histEmpty"), !total);
+  renderPager(page, pages);
+
   const box = $("#histList");
   box.innerHTML = "";
-  for (const it of items) {
+  for (const it of visible) {
     const el = document.createElement("div");
     el.className = "item";
     const glyph = !it.media ? G.doc : it.audioOnly ? G.audio : G.video;
     const tag = it.media && it.txt ? `<span class="tag ok">Transcrito</span>` : !it.media ? `<span class="tag">Transcripción</span>` : "";
     el.innerHTML = `<div class="badge ${it.media ? "" : "doc"}"><i class="ic">${glyph}</i></div>
-      <div class="info"><b>${esc(it.name)}</b><div class="meta"><span>${fmtDate(it.date)} · ${fmtSize(it.size)}</span>${tag}</div></div>`;
+      <div class="info"><b title="${esc(it.name)}">${esc(shortName(it.name))}</b><div class="meta"><span>${fmtDate(it.date)} · ${fmtSize(it.size)}</span>${tag}</div></div>`;
     const actions = document.createElement("div");
     const add = (glyph, title, fn, danger = false) => {
       const b = document.createElement("button");
@@ -340,9 +377,13 @@ function renderDetails(s) {
   if (!d.path) return;
   $("#detTitle").textContent = d.justRecorded ? "Grabación completada" : "Detalles";
   show($("#detCheck"), d.justRecorded);
-  $("#detCrumb").textContent = baseName(d.path);
+  // Nombres largos: se muestran cortos (20 caracteres + "…") y completos en el tooltip.
+  setName($("#detCrumb"), baseName(d.path));
   const name = $("#detName");
-  if (name.readOnly) name.value = baseName(d.path);  // no se pisa mientras se edita
+  if (name.readOnly) {  // no se pisa mientras se edita
+    name.value = shortName(baseName(d.path));
+    name.title = baseName(d.path);
+  }
   $("#detFolder").textContent = dirName(d.path);
   $("#detDate").textContent = d.created ? fmtDate(d.created) : "";
 
@@ -384,12 +425,17 @@ store.subscribe(["config", "source", "monitors", "engine", "rec"], renderHome);
 store.subscribe(["picker"], renderPicker);
 store.subscribe(["rec", "config"], renderRecording);
 store.subscribe(["tx", "txBusy"], renderTranscribe);
+store.subscribe(["viewer"], renderViewer);
 store.subscribe(["history"], renderHistory);
 store.subscribe(["det", "txBusy"], renderDetails);
 
 // ======================================================================= acciones
 
 function go(view) {
+  // Al salir de "Transcribir" la pantalla queda limpia para el próximo video
+  // (la transcripción ya está guardada en .txt/.srt y en el Historial).
+  // Si todavía está transcribiendo, se conserva para poder volver a ver el avance.
+  if (S().view === "transcribe" && view !== "transcribe" && !S().tx.running) resetTranscribe();
   store.set({ view });
   $("#main").scrollTop = 0;
   if (view === "history") loadHistory();
@@ -399,7 +445,7 @@ function go(view) {
 function goBack() {
   const s = S();
   if (s.view === "details") { go("history"); return true; }
-  if (s.view === "transcribe" && s.tx.back) { s.tx.back(); return true; }
+  if (s.view === "transcript" && s.viewer.back) { s.viewer.back(); return true; }
   return false;
 }
 
@@ -474,7 +520,7 @@ function startPageTx() {
   const msg = t.mode === "url" ? { cmd: "youtube", url: input } : { cmd: "transcribe", path: input, title: baseName(input) };
   api.send({ ...msg, ...txOptions(), job });
   patch("tx", { job, running: true, showProgress: true, status: t.mode === "url" ? "Conectando con YouTube…" : "Preparando…",
-                pct: null, lines: [], txt: null, srt: null, back: null });
+                pct: null, lines: [], txt: null, srt: null });
 }
 
 function onPageTx(ev) {
@@ -493,17 +539,24 @@ function onPageTx(ev) {
   }
 }
 
-/** Muestra una transcripción guardada con "← volver" a donde se estaba. */
+/** Abre una transcripción guardada en su propia pantalla (solo lectura), con "← volver". */
 async function showTranscript(txt, backLabel, back) {
   const text = await api.read_text(txt);
-  patch("tx", { job: null, running: false, showProgress: false, txt, srt: withExt(txt, ".srt"),
-                back, backLabel, crumb: baseName(txt), lines: textLines(text) });
-  go("transcribe");
+  store.set({ viewer: { txt, srt: withExt(txt, ".srt"), lines: textLines(text), back, backLabel } });
+  go("transcript");
 }
 
 function clearTranscribe() {
   if (S().tx.job) return;
-  patch("tx", { back: null, txt: null, srt: null, lines: [], showProgress: false });
+  patch("tx", { txt: null, srt: null, lines: [], showProgress: false });
+}
+
+/** Deja "Transcribir" como nueva: sin texto, sin progreso y sin el archivo/link escrito. */
+function resetTranscribe() {
+  patch("tx", { job: null, running: false, showProgress: false, status: "", pct: null, lines: [],
+                txt: null, srt: null });
+  txInputs.file = txInputs.url = "";
+  $("#txInput").value = "";
 }
 
 async function copyText(text) {
@@ -514,8 +567,16 @@ async function copyText(text) {
 
 // --- historial
 
+/** Recarga la lista conservando la página (ajustada si ya no existe, p. ej. tras eliminar). */
 async function loadHistory() {
-  store.set({ history: await api.history() });
+  const r = await api.history();
+  const pages = pageCount(r.items.length);
+  store.set({ history: { ...r, page: Math.min(S().history.page || 1, pages) } });
+}
+
+function setHistoryPage(page) {
+  patch("history", { page });
+  $("#main").scrollTop = 0;
 }
 
 /** Pide confirmación y envía a la Papelera la grabación con su transcripción. */
@@ -574,7 +635,7 @@ function onDetailsTx(ev) {
   switch (ev.type) {
     case "tx_status": tx({ status: ev.text, pct: null }); break;
     case "tx_progress": tx({ status: `${Math.round(ev.pct)}% · faltan ~${fmtDur(ev.eta)}`, pct: ev.pct }); break;
-    case "tx_segment": patch("det", { preview: { title: "Transcripción", lines: [...d.preview.lines, ev.line] } }); break;
+    case "tx_segment": patch("det", { preview: { ...d.preview, title: "Transcripción", lines: [...d.preview.lines, ev.line] } }); break;
     case "tx_done":
       patch("det", { job: null, txt: ev.txt, tx: { phase: "done", status: "Guardada como .txt y .srt", pct: null } });
       loadDetPreview(ev.txt);
@@ -840,7 +901,6 @@ $("#txBrowse").addEventListener("click", async () => {
 });
 $("#txInput").addEventListener("keydown", (e) => { if (e.key === "Enter") startPageTx(); });
 $("#txStart").addEventListener("click", startPageTx);
-$("#txCrumbs .back").addEventListener("click", goBack);
 $("#txCancel").addEventListener("click", () => {
   api.send({ cmd: "cancel_transcription" });
   patch("tx", { status: "Cancelando…", running: false });
@@ -850,6 +910,13 @@ $("#txOpenTxt").addEventListener("click", () => S().tx.txt && api.open_path(S().
 $("#txOpenSrt").addEventListener("click", () => S().tx.srt && api.reveal(S().tx.srt));
 $("#txFolder").addEventListener("click", () => api.reveal(S().tx.txt || S().config.outputDir));
 $("#txClear").addEventListener("click", clearTranscribe);
+
+// Ver transcripción guardada
+$("#vwBack").addEventListener("click", goBack);
+$("#vwCopy").addEventListener("click", () => copyText(S().viewer.lines.join("\n")));
+$("#vwOpenTxt").addEventListener("click", () => api.open_path(S().viewer.txt));
+$("#vwOpenSrt").addEventListener("click", () => api.reveal(S().viewer.srt));
+$("#vwFolder").addEventListener("click", () => api.reveal(S().viewer.txt));
 
 // Historial
 $("#histRefresh").addEventListener("click", loadHistory);
@@ -878,6 +945,7 @@ $("#detDelete").addEventListener("click", () => confirmDelete(S().det.path, () =
 const nameInput = $("#detName");
 $("#detRename").addEventListener("click", () => {
   if (S().det.tx.phase === "running") { toast("Espera a que termine la transcripción.", G.warn); return; }
+  nameInput.value = baseName(S().det.path);  // al editar se muestra el nombre completo
   nameInput.readOnly = false;
   nameInput.focus();
   nameInput.select();

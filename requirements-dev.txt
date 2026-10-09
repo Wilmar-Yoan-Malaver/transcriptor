@@ -1,0 +1,5 @@
+# Herramientas de desarrollo (no hacen falta para usar la app)
+-r requirements.txt
+pytest
+ruff
+pyinstaller

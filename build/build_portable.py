@@ -116,7 +116,8 @@ def main():
     print(f"Listo: {target}  ({size / 2**30:.2f} GB)")
 
     if args.zip:
-        archive = shutil.make_archive(str(out_root / "Transcriptor-portable"), "zip", target.parent, target.name)
+        archive = shutil.make_archive(str(out_root / "Transcriptor-portable"), "zip",
+                                      target.parent, target.name)
         print("Zip:", archive, f"({Path(archive).stat().st_size / 2**30:.2f} GB)")
 
 

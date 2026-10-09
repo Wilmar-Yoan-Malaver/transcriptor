@@ -354,6 +354,8 @@ class MeetingRecorder:
 
     # Reloj de grabación: segundos efectivos, sin contar pausas.
     def elapsed(self):
+        if not self._t0:  # todavía no arrancó
+            return 0.0
         now = self._pause_started if self._paused.is_set() else time.time()
         return max(0.0, now - self._t0 - self._paused_total)
 
@@ -559,8 +561,9 @@ class Transcriber:
 
     def transcribe(self, path, title, out_dir, model="small", language=None, vad=False,
                    timestamps=True, status=print, progress=None, segment=None,
-                   cancel=threading.Event()):
+                   cancel=None):
         """Transcribe y guarda .txt y .srt. Devuelve (ruta_txt, ruta_srt, duración)."""
+        cancel = cancel or threading.Event()  # uno nuevo por llamada (no compartido entre llamadas)
         m = self.model(model, status)
         status("Preparando audio…")
         audio = load_audio(path)

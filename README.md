@@ -8,9 +8,10 @@ También transcribe archivos de video/audio y links de YouTube, incluso en vivo 
 ```
 Transcriptor.pyw   punto de entrada (abre la app; con --engine arranca el motor)
 desktop/           ventana pywebview, barra flotante, borde rojo, configuración
-ui/                interfaz HTML/CSS/JS (index.html, style.css, app.js, bar.html)
+ui/                interfaz HTML/CSS/JS (index.html, style.css, lib.js, app.js, bar.html)
 engine/            motor: Whisper, captura (Windows Graphics Capture), audio, YouTube
 build/             scripts de empaquetado
+tests/             pruebas automáticas (pytest y node --test)
 dist/              paquetes generados (no se edita a mano)
 ```
 
@@ -26,6 +27,30 @@ O doble clic en `Transcriptor.lnk`. No hay que compilar: al cambiar un `.py`, `.
 o `.js`, cierra y vuelve a abrir la app.
 
 Registro del motor: `%APPDATA%\Transcriptor\engine.log`.
+
+## Calidad: linters y pruebas
+
+Instalar las herramientas (una vez):
+
+```bash
+%USERPROFILE%\.venvs\transcriptor\Scripts\python.exe -m pip install -r requirements-dev.txt
+npm install
+```
+
+Ejecutar:
+
+```bash
+%USERPROFILE%\.venvs\transcriptor\Scripts\python.exe -m ruff check .
+%USERPROFILE%\.venvs\transcriptor\Scripts\python.exe -m pytest -q
+npm run lint
+npm test
+```
+
+- `ruff` (Python) y `ESLint` (interfaz) revisan errores comunes y estilo. La configuración está en
+  `pyproject.toml` y `eslint.config.mjs`.
+- `tests/` tiene pruebas del motor, de la API de la interfaz y del protocolo JSON (`pytest`), y de
+  las funciones puras de `ui/lib.js` (`node --test`).
+- GitHub Actions (`.github/workflows/calidad.yml`) corre todo en cada push a `main` y en cada PR.
 
 ## Empaquetar
 

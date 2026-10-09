@@ -300,8 +300,8 @@ class App:
             if pos and winutil.point_on_screen(pos[0] + 20, pos[1] + 20):
                 winutil.move_topmost(h, *pos)  # donde la dejaste la última vez
             else:
-                l, _t, r, _b = winutil.outer_rect(h)
-                winutil.move_topmost(h, area[0] + (area[2] - area[0] - (r - l)) // 2, area[1] + 8)
+                left, _top, right, _bottom = winutil.outer_rect(h)
+                winutil.move_topmost(h, area[0] + (area[2] - area[0] - (right - left)) // 2, area[1] + 8)
 
         self.bar.events.shown += setup_bar
         self.bar.events.loaded += lambda bar=self.bar: self.js(bar, "init", self.rec_flags)
@@ -373,8 +373,10 @@ class App:
         self.main.events.shown += lambda: winutil.style_titlebar(winutil.hwnd_of(self.main))
         self.main.events.closing += self.on_closing
         self.main.events.closed += self.on_closed
-        webview.start(self.engine.start, gui="edgechromium", private_mode=False,
-                      storage_path=str(DATA / "webview"), icon=str(UI / "icon.ico"))
+        # private_mode: perfil en memoria, sin caché en disco. Con caché persistente, WebView2
+        # podía servir un index.html viejo junto a un app.js nuevo tras actualizar la app.
+        webview.start(self.engine.start, gui="edgechromium", private_mode=True,
+                      icon=str(UI / "icon.ico"))
 
 
 class BarApi:
@@ -558,12 +560,15 @@ class Api:
         else:
             target = Path(sys.executable).with_name("pythonw.exe")
             args = f'"{ROOT / "Transcriptor.pyw"}"'
-        q = lambda s: str(s).replace("'", "''")  # comillas simples para PowerShell
+        def q(value):  # texto entre comillas simples para PowerShell
+            return str(value).replace("'", "''")
+
         script = "".join(
             f"$s=(New-Object -ComObject WScript.Shell).CreateShortcut("
             f"[Environment]::GetFolderPath('{folder}')+'\\Transcriptor.lnk');"
             f"$s.TargetPath='{q(target)}';$s.Arguments='{q(args)}';$s.WorkingDirectory='{q(ROOT)}';"
-            f"$s.IconLocation='{q(UI / 'icon.ico')},0';$s.Description='Graba, transcribe y comparte';$s.Save();"
+            f"$s.IconLocation='{q(UI / 'icon.ico')},0';$s.Description='Graba, transcribe y comparte';"
+            f"$s.Save();"
             for folder in ("Desktop", "Programs"))
         r = subprocess.run(["powershell", "-NoProfile", "-Command", script], creationflags=NO_WINDOW)
         return r.returncode == 0
