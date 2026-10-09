@@ -1,0 +1,9 @@
+# Paquetes generados (portable y .exe) y modelos de Whisper: se regeneran con build/
+dist/
+
+# Python
+__pycache__/
+*.pyc
+
+# Acceso directo local (tiene rutas de este PC)
+*.lnk

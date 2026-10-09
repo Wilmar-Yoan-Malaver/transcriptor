@@ -1,0 +1,335 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <title>Transcriptor</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="shell">
+
+  <!-- ============================================================ barra lateral -->
+  <aside class="sidebar">
+    <div class="brand">
+      <img src="logo.png" alt="">
+      <div><b>Transcriptor</b><span>Graba · Transcribe · Comparte</span></div>
+    </div>
+    <nav class="nav" id="nav">
+      <button data-nav="home"><i class="ic">&#xE80F;</i>Inicio</button>
+      <button data-nav="live" id="navLive" class="hidden"><i class="ic">&#xE7C8;</i>Grabación<span class="rec-dot"></span></button>
+      <button data-nav="transcribe"><i class="ic">&#xE8A5;</i>Transcribir</button>
+      <button data-nav="history"><i class="ic">&#xE81C;</i>Historial</button>
+      <button data-nav="settings"><i class="ic">&#xE713;</i>Configuración</button>
+      <button data-nav="about"><i class="ic">&#xE946;</i>Acerca de</button>
+    </nav>
+    <div class="engine-pill" id="enginePill" title=""><i></i><span id="engineText">Iniciando motor…</span></div>
+  </aside>
+
+  <main id="main">
+
+    <!-- ===================================================================== inicio -->
+    <section class="view" id="view-home">
+      <h2>¿Qué quieres capturar?</h2>
+      <div class="grid g3">
+        <button class="choice" data-capture="monitor"><i class="ic">&#xE7F4;</i>Pantalla completa</button>
+        <button class="choice" data-capture="window"><i class="ic">&#xE737;</i>Ventana / aplicación</button>
+        <button class="choice" data-capture="audio"><i class="ic">&#xE8D6;</i>Solo audio</button>
+      </div>
+      <div class="chip">
+        <i class="ic" id="srcIcon">&#xE7F4;</i>
+        <span class="muted">Se grabará:</span>
+        <b id="srcText">Buscando pantallas…</b>
+        <button class="btn" id="srcChange">Cambiar…</button>
+      </div>
+
+      <h2>¿Qué audio incluir?</h2>
+      <div class="grid g4">
+        <button class="choice" data-audio="mic"><i class="ic">&#xE720;</i>Micrófono<label class="switch static"><input type="checkbox" tabindex="-1"><span></span></label></button>
+        <button class="choice" data-audio="sys"><i class="ic">&#xE767;</i>Audio del sistema<label class="switch static"><input type="checkbox" tabindex="-1"><span></span></label></button>
+        <button class="choice" data-audio="both"><span class="icons"><i class="ic">&#xE720;</i><i class="ic">&#xE767;</i></span>Ambos<label class="switch static"><input type="checkbox" tabindex="-1"><span></span></label></button>
+        <button class="choice" data-audio="none"><i class="ic">&#xE74F;</i>Sin audio<label class="switch static"><input type="checkbox" tabindex="-1"><span></span></label></button>
+      </div>
+      <div class="row-flex" style="margin-top:14px; align-items:flex-end">
+        <label class="field grow"><span>Salida del escritorio (lo que escuchas)</span><select data-cfg="speaker" data-list="speakers"></select></label>
+        <label class="field grow"><span>Micrófono</span><select data-cfg="mic" data-list="mics"></select></label>
+        <button class="icon-btn" id="refreshDevices" title="Actualizar dispositivos">&#xE72C;</button>
+      </div>
+      <div class="row-flex" style="margin-top:12px; align-items:flex-end">
+        <label class="field grow"><span>Idioma de la grabación (para la transcripción en vivo y la final)</span><select data-cfg="language" data-options="languages"></select></label>
+        <label class="field grow"><span>Modelo para la transcripción final</span><select data-cfg="model" data-options="models"></select></label>
+        <span style="width:34px"></span>
+      </div>
+
+      <h2>Opciones adicionales</h2>
+      <div class="grid g5">
+        <div class="tile"><div class="row"><i class="ic">&#xE962;</i>Mostrar cursor</div><label class="switch"><input type="checkbox" data-cfg="showCursor"><span></span></label></div>
+        <div class="tile"><div class="row"><i class="ic">&#xE9D9;</i>Transcripción en vivo</div><label class="switch"><input type="checkbox" data-cfg="liveTranscription"><span></span></label></div>
+        <div class="tile"><div class="row"><i class="ic">&#xE8A5;</i>Transcribir al terminar</div><label class="switch"><input type="checkbox" data-cfg="autoTranscribe"><span></span></label></div>
+        <div class="tile"><div class="row"><i class="ic">&#xE921;</i>Minimizar al grabar</div><label class="switch"><input type="checkbox" data-cfg="hideOnRecord"><span></span></label></div>
+        <div class="tile"><div class="row"><i class="ic">&#xE9A6;</i>Borde de grabación</div><label class="switch"><input type="checkbox" data-cfg="showBorder"><span></span></label></div>
+      </div>
+
+      <div class="center" style="margin-top:34px">
+        <button class="pill" id="recordBtn"><span class="dot"></span><span id="recordText">Iniciar grabación</span></button>
+        <p class="muted" id="recordHint" style="margin-top:12px"></p>
+      </div>
+    </section>
+
+    <!-- ========================================================= grabación en curso -->
+    <section class="view fill hidden" id="view-live">
+      <div class="card">
+        <div class="rec-head" id="recHead">
+          <span class="big-dot"></span>
+          <span class="timer" id="recTimer">00:00</span>
+          <div class="grow"><b id="recTitle">Grabando</b><small id="recSource"></small></div>
+          <button class="btn" id="recPause"><i class="ic">&#xE769;</i><span>Pausar</span></button>
+          <button class="btn danger" id="recStop"><i class="ic">&#xE71A;</i>Detener y guardar</button>
+          <button class="icon-btn" id="recCancel" title="Descartar grabación">&#xE74D;</button>
+        </div>
+        <div class="meters">
+          <button class="meter" id="meterMic" data-audio-toggle="mic"><i class="ic">&#xE720;</i><span>Micrófono</span><div class="bar"><i></i></div><small></small></button>
+          <button class="meter" id="meterSys" data-audio-toggle="sys"><i class="ic">&#xE767;</i><span>Audio del sistema</span><div class="bar"><i></i></div><small></small></button>
+        </div>
+      </div>
+      <div class="card" style="margin-top:12px; flex:1; display:flex; flex-direction:column; min-height:0">
+        <div class="row-flex" style="margin-bottom:10px">
+          <b class="grow">Transcripción en vivo</b>
+          <span class="live-tag hidden" id="liveTag">en vivo</span>
+          <span class="muted" id="liveStatus"></span>
+          <button class="icon-btn" id="liveCopy" title="Copiar texto">&#xE8C8;</button>
+        </div>
+        <div class="transcript" id="liveText"></div>
+        <div class="placeholder" id="livePlaceholder"><i class="ic">&#xE9D9;</i><span id="livePlaceholderText">Las frases aparecerán aquí mientras hablan.</span></div>
+      </div>
+    </section>
+
+    <!-- ============================================================== transcribir -->
+    <section class="view fill hidden" id="view-transcribe">
+      <div class="crumbs hidden" id="txCrumbs"><button class="back"><i class="ic">&#xE72B;</i><span></span></button><span>›</span><span></span></div>
+      <h1>Transcribir</h1>
+      <p class="sub">Convierte un video, un audio o un link de YouTube en texto. Todo se procesa en tu PC.</p>
+      <div class="card">
+        <div class="seg">
+          <button data-src="file" class="on"><i class="ic">&#xE8E5;</i>Archivo de video o audio</button>
+          <button data-src="url"><i class="ic">&#xE774;</i>Link de YouTube</button>
+        </div>
+        <div class="row-flex" style="margin-top:14px">
+          <input type="text" class="grow" id="txInput" placeholder="Elige o arrastra un archivo (MP4, MKV, MOV, MP3, WAV…)">
+          <button class="btn" id="txBrowse">Examinar…</button>
+          <button class="btn primary" id="txStart"><i class="ic">&#xE8A5;</i>Transcribir</button>
+        </div>
+        <div class="row-flex wrap" style="margin-top:14px">
+          <label class="row-flex"><span class="muted">Modelo</span><select data-cfg="model" data-options="models"></select></label>
+          <label class="row-flex"><span class="muted">Idioma</span><select data-cfg="language" data-options="languages"></select></label>
+          <label class="toggle">Mostrar tiempos<span class="switch"><input type="checkbox" data-cfg="timestamps"><span></span></span></label>
+          <label class="toggle" title="Más rápido en reuniones con pausas. No lo uses con música: puede saltarse partes.">Saltar silencios<span class="switch"><input type="checkbox" data-cfg="vad"><span></span></span></label>
+        </div>
+      </div>
+      <div class="card hidden" id="txProgressCard" style="margin-top:12px; padding:14px 18px">
+        <div class="row-flex">
+          <div class="grow">
+            <div class="row-flex"><span class="grow" id="txStatus">Preparando…</span><span class="muted" id="txPct"></span></div>
+            <div class="progress" id="txBar"><i></i></div>
+          </div>
+          <button class="btn" id="txCancel">Cancelar</button>
+        </div>
+      </div>
+      <div class="card" style="margin-top:12px; flex:1; display:flex; flex-direction:column; min-height:0">
+        <div class="transcript" id="txOutput"></div>
+        <div class="placeholder" id="txPlaceholder"><i class="ic">&#xE8A5;</i>La transcripción aparecerá aquí, línea por línea.</div>
+      </div>
+      <div class="row-flex" style="margin-top:12px">
+        <button class="btn" id="txCopy"><i class="ic">&#xE8C8;</i>Copiar texto</button>
+        <button class="btn" id="txOpenTxt" disabled><i class="ic">&#xE8A5;</i>Abrir .txt</button>
+        <button class="btn" id="txOpenSrt" disabled title="Subtítulos para el video"><i class="ic">&#xE7F0;</i>Subtítulos .srt</button>
+        <button class="btn" id="txFolder"><i class="ic">&#xE838;</i>Abrir carpeta</button>
+        <button class="icon-btn" id="txClear" title="Limpiar">&#xE74D;</button>
+      </div>
+    </section>
+
+    <!-- ================================================================= historial -->
+    <section class="view hidden" id="view-history">
+      <div class="row-flex">
+        <div class="grow"><h1>Historial</h1><p class="sub" id="histFolder" style="margin-bottom:0"></p></div>
+        <button class="icon-btn" id="histRefresh" title="Actualizar">&#xE72C;</button>
+        <button class="btn" id="histOpen"><i class="ic">&#xE838;</i>Abrir carpeta</button>
+      </div>
+      <div class="list" id="histList" style="margin-top:18px"></div>
+      <div class="placeholder hidden" id="histEmpty" style="padding:80px 0">
+        <i class="ic">&#xE81C;</i>Todavía no hay grabaciones ni transcripciones.
+        <button class="btn primary" data-goto="home">Hacer una grabación</button>
+      </div>
+    </section>
+
+    <!-- ================================================================== detalles -->
+    <section class="view hidden" id="view-details">
+      <div class="crumbs"><button class="back" id="detBack"><i class="ic">&#xE72B;</i><span>Historial</span></button><span>›</span><span id="detCrumb"></span></div>
+      <div class="card" style="padding:28px 28px 24px">
+        <div class="done-head"><span class="check" id="detCheck"><i class="ic">&#xE73E;</i></span><h1 id="detTitle">Grabación completada</h1></div>
+        <div class="detail">
+          <div class="thumb" id="detThumb">
+            <img id="detImg" class="hidden" alt="">
+            <i class="ic big hidden" id="detAudioIcon">&#xE8D6;</i>
+            <button class="play" id="detPlay" title="Reproducir">&#xE768;</button>
+            <span class="dur" id="detDur"></span>
+          </div>
+          <div>
+            <div class="name-row">
+              <input type="text" id="detName" readonly spellcheck="false">
+              <button class="icon-btn" id="detRename" title="Cambiar nombre">&#xE70F;</button>
+              <button class="icon-btn danger" id="detDelete" title="Eliminar grabación">&#xE74D;</button>
+            </div>
+            <div class="facts">
+              <div><i class="ic">&#xE787;</i><span id="detDate"></span></div>
+              <div><i class="ic" id="detFmtIcon">&#xE714;</i><span id="detFmt">Leyendo archivo…</span></div>
+              <div><i class="ic">&#xE74E;</i><span id="detSize"></span></div>
+              <div><i class="ic">&#xE838;</i><span id="detFolder"></span></div>
+            </div>
+          </div>
+        </div>
+        <div class="actions3" style="margin-top:24px; gap:12px">
+          <button class="btn primary lg" id="detView"><i class="ic">&#xE768;</i>Ver</button>
+          <button class="btn lg" id="detOpenFolder"><i class="ic">&#xE838;</i>Abrir carpeta</button>
+          <button class="btn lg" id="detShare" title="Copia el archivo para pegarlo en Teams, WhatsApp, correo…"><i class="ic">&#xE72D;</i>Compartir</button>
+        </div>
+      </div>
+
+      <h2>¿Qué más quieres hacer?</h2>
+      <div class="actions3" style="margin-top:0">
+        <button class="action" data-goto="home"><i class="ic">&#xE72C;</i>Nueva grabación</button>
+        <button class="action" id="detTx"><i class="ic" id="detTxIcon">&#xE8A5;</i><span id="detTxTitle">Generar transcripción</span><div class="progress hidden" id="detTxBar"><i></i></div><small id="detTxStatus" class="hidden"></small></button>
+        <button class="action" id="detViewTx" disabled><i class="ic">&#xE7B3;</i>Ver transcripción</button>
+      </div>
+
+      <div class="card hidden" id="detPreviewCard" style="margin-top:14px">
+        <div class="row-flex" style="margin-bottom:10px"><b class="grow" id="detPreviewTitle">Transcripción</b><button class="icon-btn" id="detCopy" title="Copiar texto">&#xE8C8;</button></div>
+        <div class="transcript" id="detPreview" style="max-height:300px"></div>
+      </div>
+    </section>
+
+    <!-- ============================================================= configuración -->
+    <section class="view hidden" id="view-settings">
+      <h1>Configuración</h1>
+      <div class="pivot" id="pivot">
+        <button data-tab="general" class="on">General</button>
+        <button data-tab="video">Video</button>
+        <button data-tab="audio">Audio</button>
+        <button data-tab="tx">Transcripción</button>
+        <button data-tab="adv">Avanzado</button>
+      </div>
+
+      <div data-panel="general">
+        <div class="setting col">
+          <div class="txt"><b>Carpeta de salida</b><small>Aquí se guardan las grabaciones (.mp4) y las transcripciones (.txt y .srt).</small></div>
+          <div class="row-flex"><input type="text" class="grow" id="cfgOut" readonly><button class="btn" id="cfgOutPick">Cambiar…</button><button class="btn" id="cfgOutOpen" title="Abrir carpeta"><i class="ic">&#xE838;</i></button></div>
+        </div>
+        <div class="setting"><div class="txt"><b>Minimizar la app al grabar</b><small>Solo queda la barra flotante (que nunca sale en el video). Si la transcripción en vivo está activa, la app queda a la vista para que leas el texto.</small></div><label class="switch"><input type="checkbox" data-cfg="hideOnRecord"><span></span></label></div>
+        <div class="setting"><div class="txt"><b>Mostrar borde rojo al grabar</b><small>Marca la pantalla o ventana que se está grabando. No aparece en el video.</small></div><label class="switch"><input type="checkbox" data-cfg="showBorder"><span></span></label></div>
+        <div class="setting"><div class="txt"><b>Reproducir sonido al iniciar y detener</b><small>El sonido de inicio suena antes de empezar, así no queda grabado.</small></div><label class="switch"><input type="checkbox" data-cfg="playSounds"><span></span></label></div>
+        <div class="setting"><div class="txt"><b>Accesos directos</b><small>Crea el icono de Transcriptor en el Escritorio y en el menú Inicio.</small></div><button class="btn" id="cfgShortcuts"><i class="ic">&#xE71B;</i>Crear accesos directos</button></div>
+      </div>
+
+      <div data-panel="video" class="hidden">
+        <div class="setting"><div class="txt"><b>Calidad de video</b><small>Resolución máxima. Más resolución = archivos más pesados y más uso de CPU.</small></div><select data-cfg="quality" data-options="qualities"></select></div>
+        <div class="setting"><div class="txt"><b>FPS (cuadros por segundo)</b><small>30 es ideal para reuniones y tutoriales. 60 da más fluidez pero exige más a tu PC.</small></div><select data-cfg="fps" data-options="fps" data-number></select></div>
+        <div class="setting"><div class="txt"><b>Mostrar cursor del mouse</b><small>Incluye el puntero en la grabación.</small></div><label class="switch"><input type="checkbox" data-cfg="showCursor"><span></span></label></div>
+        <div class="setting"><div class="txt"><b>Formato de archivo</b></div><span class="muted">MP4 (H.264 + AAC)</span></div>
+      </div>
+
+      <div data-panel="audio" class="hidden">
+        <div class="setting"><div class="txt"><b>Salida del escritorio</b><small>Lo que escuchas: las voces de la reunión, videos, etc.</small></div><select data-cfg="speaker" data-list="speakers" style="width:340px"></select></div>
+        <div class="setting"><div class="txt"><b>Micrófono</b><small>Tu voz.</small></div><select data-cfg="mic" data-list="mics" style="width:340px"></select></div>
+        <button class="btn" id="cfgRefreshDevices" style="margin-top:6px"><i class="ic">&#xE72C;</i>Actualizar dispositivos</button>
+      </div>
+
+      <div data-panel="tx" class="hidden">
+        <div class="setting"><div class="txt"><b>Modelo de Whisper</b><small>Los grandes son más precisos pero más lentos. Cada uno se descarga la primera vez que lo uses.</small></div><select data-cfg="model" data-options="models"></select></div>
+        <div class="setting"><div class="txt"><b>Idioma</b><small>Si el audio mezcla idiomas o no estás seguro, usa «Detectar automáticamente».</small></div><select data-cfg="language" data-options="languages"></select></div>
+        <div class="setting"><div class="txt"><b>Transcripción en vivo al grabar</b><small>Muestra el texto mientras grabas. Al terminar te pregunta si guardar ese texto o transcribir de nuevo con más precisión.</small></div><label class="switch"><input type="checkbox" data-cfg="liveTranscription"><span></span></label></div>
+        <div class="setting"><div class="txt"><b>Modelo para el modo en vivo</b><small>Debe ser rápido para no atrasarse. «base» es un buen equilibrio en CPU.</small></div><select data-cfg="liveModel" data-options="liveModels"></select></div>
+        <div class="setting"><div class="txt"><b>Transcribir al terminar la grabación</b><small>Si no hay transcripción en vivo, empieza sola en cuanto detienes la grabación.</small></div><label class="switch"><input type="checkbox" data-cfg="autoTranscribe"><span></span></label></div>
+        <div class="setting"><div class="txt"><b>Mostrar tiempos en el .txt</b><small>Agrega [mm:ss] al inicio de cada línea.</small></div><label class="switch"><input type="checkbox" data-cfg="timestamps"><span></span></label></div>
+        <div class="setting"><div class="txt"><b>Saltar silencios</b><small>Más rápido en reuniones con pausas. No lo uses con música o canciones: puede saltarse partes.</small></div><label class="switch"><input type="checkbox" data-cfg="vad"><span></span></label></div>
+      </div>
+
+      <div data-panel="adv" class="hidden">
+        <div class="setting"><div class="txt"><b>Motor</b><small id="cfgEngine"></small></div><button class="btn" id="cfgLog">Ver registro</button><button class="btn" id="cfgRestart">Reiniciar motor</button></div>
+        <div class="setting"><div class="txt"><b>Rendimiento</b><small>El motor corre con prioridad baja: Windows le da preferencia a lo que estés usando (la reunión, el navegador…). La transcripción en vivo usa solo la mitad de los núcleos.</small></div></div>
+      </div>
+
+      <div style="display:flex; justify-content:flex-end; margin-top:14px">
+        <button class="btn" id="cfgReset"><i class="ic">&#xE72C;</i>Restablecer configuración</button>
+      </div>
+    </section>
+
+    <!-- ================================================================= acerca de -->
+    <section class="view hidden" id="view-about" style="max-width:760px">
+      <h1>Acerca de</h1>
+      <div class="card" style="margin-top:20px; padding:28px">
+        <div class="row-flex" style="gap:18px"><img src="logo.png" width="64" height="64" alt=""><div><h1 style="font-size:24px">Transcriptor</h1><span class="muted" id="aboutVersion"></span></div></div>
+        <div class="flow">Graba <i>→</i> Transcribe <i>→</i> Comparte</div>
+        <div class="underline"></div>
+        <p class="muted" style="margin-top:14px">Graba tu pantalla, una ventana o tus reuniones y conviértelas en texto, incluso en vivo. También transcribe videos, audios y links de YouTube.</p>
+      </div>
+      <h2>Privacidad</h2>
+      <div class="setting"><i class="ic" style="font-size:20px; color:var(--success)">&#xE72E;</i><div class="txt">Todo se procesa en tu PC: las grabaciones y transcripciones no se envían a ningún servidor. Solo se usa internet para descargar los modelos de Whisper la primera vez y para bajar audios de YouTube.</div></div>
+      <h2>Cómo está hecho</h2>
+      <div class="setting"><div class="txt">Interfaz</div><span class="muted">HTML/CSS · pywebview (Edge WebView2)</span></div>
+      <div class="setting"><div class="txt">Transcripción</div><span class="muted">Whisper (faster-whisper) en CPU</span></div>
+      <div class="setting"><div class="txt">Captura de pantalla y ventanas</div><span class="muted">Windows Graphics Capture + FFmpeg (H.264)</span></div>
+      <div class="setting"><div class="txt">Audio</div><span class="muted">WASAPI (escritorio + micrófono)</span></div>
+      <div class="setting"><div class="txt">YouTube</div><span class="muted">yt-dlp</span></div>
+    </section>
+  </main>
+</div>
+
+<!-- ======================================================== selector de pantalla -->
+<div class="modal-back hidden" id="picker">
+  <div class="modal picker">
+    <h3>¿Qué quieres grabar?</h3>
+    <p class="muted" style="margin:4px 0 14px">Igual que al compartir pantalla en Chrome o Teams: elige una pantalla completa o la ventana de una aplicación.</p>
+    <div class="row-flex">
+      <div class="seg grow">
+        <button data-ptab="monitor" class="on"><i class="ic">&#xE7F4;</i><span>Pantalla completa</span></button>
+        <button data-ptab="window"><i class="ic">&#xE737;</i><span>Ventana</span></button>
+      </div>
+      <button class="icon-btn" id="pickRefresh" title="Actualizar lista">&#xE72C;</button>
+    </div>
+    <div class="tiles" id="pickTiles"></div>
+    <div class="foot">
+      <span class="grow" id="pickSel">Nada seleccionado</span>
+      <button class="btn" id="pickCancel">Cancelar</button>
+      <button class="btn primary" id="pickOk" disabled>Seleccionar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================== diálogo genérico -->
+<div class="modal-back hidden" id="dialog">
+  <div class="modal dialog">
+    <h3 id="dlgTitle"></h3>
+    <p id="dlgText"></p>
+    <div class="options" id="dlgOptions"></div>
+    <div class="foot"><button class="btn" id="dlgCancel">Ahora no</button></div>
+  </div>
+</div>
+
+<!-- ============================================== nombre de la grabación al terminar -->
+<div class="modal-back hidden" id="nameDialog">
+  <div class="modal dialog">
+    <h3>¿Cómo quieres llamar esta grabación?</h3>
+    <p>Ya está guardada con la fecha como nombre. Si cierras la app ahora, se queda así y no se pierde nada.</p>
+    <input type="text" id="nameInput" spellcheck="false" style="margin-top:16px; font-size:15px; padding:9px 12px">
+    <small class="muted" id="nameError" style="min-height:18px; margin-top:6px; color:var(--rec)"></small>
+    <div class="foot" style="margin-top:8px">
+      <button class="btn" id="nameKeep">Dejar el nombre con la fecha</button>
+      <button class="btn primary" id="nameSave">Guardar nombre</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"><i class="ic" id="toastIcon">&#xE946;</i><span id="toastText"></span></div>
+
+<script src="app.js"></script>
+</body>
+</html>

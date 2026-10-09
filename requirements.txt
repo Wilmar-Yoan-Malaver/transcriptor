@@ -1,0 +1,8 @@
+faster-whisper
+yt-dlp
+imageio-ffmpeg
+soundcard
+numpy
+windows-capture
+opencv-python
+pywebview
