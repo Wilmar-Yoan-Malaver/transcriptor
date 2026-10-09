@@ -8,6 +8,7 @@ Uso (desde el entorno de desarrollo):
 """
 
 import argparse
+import hashlib
 import shutil
 import sys
 import sysconfig
@@ -18,6 +19,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 PY_VERSION = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
 EMBED_URL = f"https://www.python.org/ftp/python/{PY_VERSION}/python-{PY_VERSION}-embed-amd64.zip"
+# Huella SHA-256 del Python embeddable de cada versión. Si la descarga no coincide (archivo dañado
+# o alterado), el empaquetado se detiene. Al subir de versión de Python, agregar aquí la nueva
+# huella (python.org la publica en la página de cada versión).
+EMBED_SHA256 = {
+    "3.14.7": "d297e5ff019966817ad8502465176139f2d3d840fa4ed84b13bed399a6ab1f15",
+}
 APP_ITEMS = ["Transcriptor.pyw", "desktop", "engine", "ui"]
 # Herramientas de desarrollo que no hacen falta para usar la app.
 SKIP_PACKAGES = ("pip", "setuptools", "pyinstaller", "_pyinstaller_hooks_contrib", "altgraph",
@@ -43,6 +50,26 @@ de Whisper tiny, base y small. Los modelos medium y large se descargan si los el
 Las grabaciones y transcripciones se guardan en Documentos\\Transcripciones
 (se puede cambiar en Configuración). La configuración vive en %APPDATA%\\Transcriptor.
 """
+
+
+def sha256(path):
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for block in iter(lambda: f.read(2**20), b""):
+            h.update(block)
+    return h.hexdigest()
+
+
+def verify_embed(path):
+    expected = EMBED_SHA256.get(PY_VERSION)
+    actual = sha256(path)
+    if expected is None:
+        sys.exit(f"Falta la huella de Python {PY_VERSION} en EMBED_SHA256 (la descargada es {actual}).\n"
+                 "Compárala con la publicada en python.org y agrégala.")
+    if actual != expected:
+        path.unlink()
+        sys.exit(f"La huella de {path.name} no coincide: se esperaba {expected} y llegó {actual}. "
+                 "Se borró la descarga; vuelve a intentarlo.")
 
 
 def site_packages():
@@ -72,7 +99,9 @@ def main():
     embed_zip = staging / Path(EMBED_URL).name
     if not embed_zip.exists():
         print("Descargando", EMBED_URL)
-        urllib.request.urlretrieve(EMBED_URL, embed_zip)
+        # URL fija https de python.org; además se verifica la huella justo abajo.
+        urllib.request.urlretrieve(EMBED_URL, embed_zip)  # nosec B310
+    verify_embed(embed_zip)
     py_dir = target / "python"
     with zipfile.ZipFile(embed_zip) as z:
         z.extractall(py_dir)
@@ -119,6 +148,11 @@ def main():
         archive = shutil.make_archive(str(out_root / "Transcriptor-portable"), "zip",
                                       target.parent, target.name)
         print("Zip:", archive, f"({Path(archive).stat().st_size / 2**30:.2f} GB)")
+        # Huella para que quien lo descargue compruebe que llegó completo y sin alterar:
+        #   Get-FileHash Transcriptor-portable.zip  (PowerShell)
+        digest = sha256(archive)
+        Path(archive + ".sha256").write_text(f"{digest}  {Path(archive).name}\n", encoding="ascii")
+        print("SHA-256:", digest)
 
 
 if __name__ == "__main__":

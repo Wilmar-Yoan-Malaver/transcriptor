@@ -236,7 +236,7 @@ function renderPicker(s) {
     if (key in p.thumbs && b._thumb !== p.thumbs[key]) {
       b._thumb = p.thumbs[key];
       const shot = $(".shot", b);
-      if (p.thumbs[key]) shot.innerHTML = `<img src="data:image/png;base64,${p.thumbs[key]}">`;
+      if (isBase64(p.thumbs[key])) shot.innerHTML = `<img src="data:image/png;base64,${p.thumbs[key]}">`;
       else if (!shot.textContent.includes("Minimizada")) shot.textContent = "Sin vista previa";
     }
   }
@@ -388,8 +388,9 @@ function renderDetails(s) {
   $("#detDate").textContent = d.created ? fmtDate(d.created) : "";
 
   const info = d.info, img = $("#detImg");
-  if (info?.thumb) { if (img._thumb !== info.thumb) { img.src = `data:image/png;base64,${info.thumb}`; img._thumb = info.thumb; } }
-  show(img, !!info?.thumb);
+  const thumb = isBase64(info?.thumb) ? info.thumb : null;
+  if (thumb && img._thumb !== thumb) { img.src = `data:image/png;base64,${thumb}`; img._thumb = thumb; }
+  show(img, !!thumb);
   show($("#detAudioIcon"), !!info && !info.has_video);
   $("#detDur").textContent = info ? fmtDur(info.duration) : "";
   $("#detFmtIcon").textContent = info && !info.has_video ? G.audio : G.video;

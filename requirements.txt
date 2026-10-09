@@ -1,8 +1,10 @@
-faster-whisper
-yt-dlp
-imageio-ffmpeg
-soundcard
-numpy
-windows-capture
-opencv-python
-pywebview
+# Versiones exactas: se instala siempre lo mismo que se probó. Dependabot propone las
+# actualizaciones como PR, y el CI las prueba y les pasa pip-audit antes de aceptarlas.
+faster-whisper==1.2.1
+yt-dlp==2026.8.19  # YouTube cambia seguido: conviene aceptar pronto sus actualizaciones
+imageio-ffmpeg==0.6.0
+SoundCard==0.4.6
+numpy==2.5.3
+windows-capture==2.0.1
+opencv-python==5.0.0.93
+pywebview==6.2.1
