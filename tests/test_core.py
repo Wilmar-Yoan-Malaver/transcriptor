@@ -117,3 +117,29 @@ def test_enabling_source_without_device_fails(tmp_path):
     rec = core.MeetingRecorder(tmp_path, None, None, None, speaker_on=False, mic_on=False)
     with pytest.raises(RuntimeError):
         rec.set_source("mic", True)
+
+
+# --------------------------------------------------- repeticiones en bucle de Whisper
+
+@pytest.mark.parametrize(("text", "expected"), [
+    ("Buenas, buenas, buenas, buenas, buenas, buenas, buenas, buenas.", "Buenas, buenas."),
+    ("Hola, buenas, buenas, buenas, buenas, buenas.", "Hola, buenas, buenas."),
+    ("Bueno, pues, vamos a ver, vamos a ver, vamos a ver, vamos a ver, vamos a ver, vamos",
+     "Bueno, pues, vamos a ver, vamos a ver"),
+    ("uno dos tres uno dos tres uno dos tres uno dos tres y seguimos",
+     "uno dos tres uno dos tres y seguimos"),
+    ("Sí sí sí sí sí. Listo, no no no no, empecemos.", "Sí sí. Listo, no no, empecemos."),
+])
+def test_collapse_repeats_removes_whisper_loops(text, expected):
+    assert core.collapse_repeats(text) == expected
+
+
+@pytest.mark.parametrize("text", [
+    "No, no, no, eso no es así.",              # 3 repeticiones: habla natural
+    "Sí, sí. Listo, empecemos.",
+    "El daily tiene un listado de cuarenta y cinco preguntas.",
+    "",
+    "¿Me escuchan? ¿Me escuchan?",
+])
+def test_collapse_repeats_keeps_normal_speech(text):
+    assert core.collapse_repeats(text) == text
