@@ -79,8 +79,11 @@ const store = createStore({
         txt: null, srt: null },
   // Transcripción guardada abierta desde el Historial o la ficha (pantalla de solo lectura).
   viewer: { txt: null, srt: null, lines: [], back: null, backLabel: "Historial" },
-  det: { path: null, justRecorded: false, info: null, infoError: null, created: null, txt: null, job: null,
+  det: { path: null, justRecorded: false, info: null, infoError: null, created: null, txt: null,
          req: null, transcribeWhenLoaded: false, tx: DET_TX_IDLE, preview: { title: "Transcripción", lines: [] } },
+  // Transcripción de una grabación pedida desde su ficha. Vive fuera de `det` para que siga
+  // (y se vea su avance) aunque el usuario cambie de pantalla o abra otra grabación.
+  recTx: null,  // { job, path, phase: "running", status, pct, lines }
   history: { folder: "", items: [], page: 1 },
   version: "",
   enginePath: "",
@@ -346,7 +349,9 @@ function renderHistory(s) {
     const el = document.createElement("div");
     el.className = "item";
     const glyph = !it.media ? G.doc : it.audioOnly ? G.audio : G.video;
-    const tag = it.media && it.txt ? `<span class="tag ok">Transcrito</span>` : !it.media ? `<span class="tag">Transcripción</span>` : "";
+    const busy = it.media && recTxFor(it.media, s);
+    const tag = busy ? `<span class="tag">Transcribiendo…</span>`
+      : it.media && it.txt ? `<span class="tag ok">Transcrito</span>` : !it.media ? `<span class="tag">Transcripción</span>` : "";
     el.innerHTML = `<div class="badge ${it.media ? "" : "doc"}"><i class="ic">${glyph}</i></div>
       <div class="info"><b title="${esc(it.name)}">${esc(shortName(it.name))}</b><div class="meta"><span>${fmtDate(it.date)} · ${fmtSize(it.size)}</span>${tag}</div></div>`;
     const actions = document.createElement("div");
@@ -360,7 +365,7 @@ function renderHistory(s) {
       actions.appendChild(b);
     };
     if (it.media) add(G.play, "Reproducir", () => api.open_path(it.media));
-    if (it.media && !it.txt) add(G.doc, "Transcribir", () => openDetails(it.media, { transcribe: true }));
+    if (it.media && !it.txt && !busy) add(G.doc, "Transcribir", () => openDetails(it.media, { transcribe: true }));
     if (it.txt) add(G.eye, "Ver transcripción", () => showTranscript(it.txt, "Historial", () => go("history")));
     add(G.folder, "Mostrar en la carpeta", () => api.reveal(it.media || it.txt));
     add(G.trash, "Eliminar", () => confirmDelete(it.media || it.txt, loadHistory), true);
@@ -400,7 +405,9 @@ function renderDetails(s) {
   $("#detSize").textContent = info ? fmtSize(info.size) : "";
 
   // Tarjeta "Generar transcripción": se deriva de la fase.
-  const tx = d.tx;
+  const running = recTxFor(d.path, s);
+  const tx = running || d.tx;
+  const otherBusy = !running && (s.txBusy || !!s.recTx);
   const titles = { idle: d.txt ? "Volver a transcribir" : "Generar transcripción", running: "Transcribiendo…",
                    done: "Transcripción lista", nospeech: "Sin voz detectada", error: "Generar transcripción",
                    canceled: "Generar transcripción" };
@@ -408,14 +415,16 @@ function renderDetails(s) {
   $("#detTxTitle").textContent = titles[tx.phase];
   show($("#detTxBar"), tx.phase === "running");
   setProgress($("#detTxBar"), tx.pct);
-  show($("#detTxStatus"), !!tx.status);
-  $("#detTxStatus").textContent = tx.status;
-  $("#detTx").disabled = tx.phase === "running" || s.txBusy;
-  $("#detViewTx").disabled = !d.txt;
+  const status = tx.status || (otherBusy ? "Hay otra transcripción en curso. Espera a que termine." : "");
+  show($("#detTxStatus"), !!status);
+  $("#detTxStatus").textContent = status;
+  $("#detTx").disabled = tx.phase === "running" || otherBusy;
+  $("#detViewTx").disabled = !d.txt || !!running;
 
-  show($("#detPreviewCard"), d.preview.lines.length > 0);
-  $("#detPreviewTitle").textContent = d.preview.title;
-  syncLines($("#detPreview"), d.preview.lines);
+  const lines = running?.lines.length ? running.lines : d.preview.lines;
+  show($("#detPreviewCard"), lines.length > 0);
+  $("#detPreviewTitle").textContent = running?.lines.length ? "Transcripción" : d.preview.title;
+  syncLines($("#detPreview"), lines);
 }
 
 store.subscribe(["view", "rec"], renderNav);
@@ -427,8 +436,8 @@ store.subscribe(["picker"], renderPicker);
 store.subscribe(["rec", "config"], renderRecording);
 store.subscribe(["tx", "txBusy"], renderTranscribe);
 store.subscribe(["viewer"], renderViewer);
-store.subscribe(["history"], renderHistory);
-store.subscribe(["det", "txBusy"], renderDetails);
+store.subscribe(["history", "recTx"], renderHistory);
+store.subscribe(["det", "txBusy", "recTx"], renderDetails);
 
 // ======================================================================= acciones
 
@@ -583,7 +592,7 @@ function setHistoryPage(page) {
 /** Pide confirmación y envía a la Papelera la grabación con su transcripción. */
 function confirmDelete(path, after) {
   const s = S();
-  if (s.det.tx.phase === "running" && s.det.path === path) {
+  if (recTxFor(path, s)) {
     toast("Espera a que termine la transcripción de esta grabación.", G.warn);
     return;
   }
@@ -603,7 +612,7 @@ function confirmDelete(path, after) {
 
 async function openDetails(path, { justRecorded = false, info = null, transcribe = false } = {}) {
   const req = info ? null : jobId("info");
-  store.set({ det: { path, justRecorded, info, infoError: null, created: null, txt: null, job: null, req,
+  store.set({ det: { path, justRecorded, info, infoError: null, created: null, txt: null, req,
                      transcribeWhenLoaded: transcribe && !info, tx: DET_TX_IDLE,
                      preview: { title: "Transcripción", lines: [] } } });
   go("details");
@@ -612,7 +621,8 @@ async function openDetails(path, { justRecorded = false, info = null, transcribe
   const fi = await api.file_info(path);
   if (S().det.path !== path) return;  // el usuario ya se fue a otra ficha
   patch("det", { created: fi?.created || null, txt: fi?.txt || null });
-  if (fi?.txt) await loadDetPreview(fi.txt);
+  // Si se está transcribiendo de nuevo, se muestra el texto nuevo (recTx), no el anterior.
+  if (fi?.txt && !recTxFor(path)) await loadDetPreview(fi.txt);
   if (info && transcribe) startDetailsTx();
 }
 
@@ -621,35 +631,54 @@ async function loadDetPreview(txt) {
   patch("det", { preview: { title: "Transcripción", lines: textLines(text) } });
 }
 
-function startDetailsTx() {
-  const d = S().det;
-  if (S().txBusy) { toast("Ya hay una transcripción en curso.", G.warn); return; }
-  const job = jobId("rec");
-  api.send({ cmd: "transcribe", path: d.path, title: baseName(d.path), ...txOptions(), out_dir: dirName(d.path), job });
-  patch("det", { job, tx: { phase: "running", status: "Preparando…", pct: null },
-                 preview: { title: "Transcripción", lines: [] } });
+/** La transcripción en curso de esta grabación, o null. */
+function recTxFor(path, s = S()) {
+  return path && s.recTx?.path === path ? s.recTx : null;
 }
 
-function onDetailsTx(ev) {
+function startRecTx(path, job, status) {
+  store.set({ recTx: { job, path, phase: "running", status, pct: null, lines: [] } });
+}
+
+function startDetailsTx() {
   const d = S().det;
-  const tx = (changes) => patch("det", { tx: { ...d.tx, ...changes } });
+  if (S().txBusy || S().recTx) { toast("Ya hay una transcripción en curso.", G.warn); return; }
+  const job = jobId("rec");
+  api.send({ cmd: "transcribe", path: d.path, title: baseName(d.path), ...txOptions(), out_dir: dirName(d.path), job });
+  patch("det", { tx: DET_TX_IDLE, preview: { title: "Transcripción", lines: [] } });
+  startRecTx(d.path, job, "Preparando…");
+}
+
+function onRecTx(ev) {
+  const r = S().recTx;
+  const update = (changes) => store.set({ recTx: { ...r, ...changes } });
   switch (ev.type) {
-    case "tx_status": tx({ status: ev.text, pct: null }); break;
-    case "tx_progress": tx({ status: `${Math.round(ev.pct)}% · faltan ~${fmtDur(ev.eta)}`, pct: ev.pct }); break;
-    case "tx_segment": patch("det", { preview: { ...d.preview, title: "Transcripción", lines: [...d.preview.lines, ev.line] } }); break;
-    case "tx_done":
-      patch("det", { job: null, txt: ev.txt, tx: { phase: "done", status: "Guardada como .txt y .srt", pct: null } });
-      loadDetPreview(ev.txt);
-      break;
+    case "tx_status": update({ status: ev.text, pct: null }); break;
+    case "tx_progress": update({ status: `${Math.round(ev.pct)}% · faltan ~${fmtDur(ev.eta)}`, pct: ev.pct }); break;
+    case "tx_segment": update({ lines: [...r.lines, ev.line] }); break;
+    case "tx_done": finishRecTx(r, { phase: "done", status: "Guardada como .txt y .srt" }, ev.txt); break;
     case "tx_nospeech":
-      patch("det", { job: null, tx: { phase: "nospeech", status: "La grabación no tiene voz: no hay nada que transcribir.", pct: null } });
+      finishRecTx(r, { phase: "nospeech", status: "La grabación no tiene voz: no hay nada que transcribir." });
       break;
-    case "tx_error":
-    case "tx_canceled":
-      patch("det", { job: null, tx: { phase: ev.type === "tx_canceled" ? "canceled" : "error",
-                                      status: ev.type === "tx_canceled" ? "Cancelada" : "Error: " + ev.message, pct: null } });
-      break;
+    case "tx_error": finishRecTx(r, { phase: "error", status: "Error: " + ev.message }); break;
+    case "tx_canceled": finishRecTx(r, { phase: "canceled", status: "Cancelada" }); break;
   }
+}
+
+/** Terminó la transcripción de una grabación: se refleja en su ficha y en el Historial, estén o no abiertos. */
+function finishRecTx(r, result, txt = null) {
+  store.set({ recTx: null });
+  const s = S();
+  if (s.det.path === r.path) {
+    patch("det", { tx: { ...result, pct: null }, ...(txt ? { txt } : {}),
+                   preview: { title: "Transcripción", lines: r.lines } });
+    if (txt) loadDetPreview(txt);
+  }
+  if (!(s.view === "details" && s.det.path === r.path)) {
+    const name = shortName(baseName(r.path));
+    toast(txt ? `Transcripción lista: «${name}».` : `«${name}»: ${result.status}`, txt ? G.check : G.warn);
+  }
+  if (s.view === "history") loadHistory();
 }
 
 /** Al terminar de grabar: pide el nombre. Resuelve con la ruta final (renombrada o la original). */
@@ -702,7 +731,7 @@ function afterRecording(ev, segments) {
         { icon: G.check, title: "Guardar el texto en vivo", text: "Listo al instante. Un poco menos preciso.",
           run: () => {
             const job = jobId("live");
-            patch("det", { job, tx: { phase: "running", status: "Guardando…", pct: null } });
+            startRecTx(ev.path, job, "Guardando…");
             api.send({ cmd: "save_live", path: ev.path, job, timestamps: S().config.timestamps });
           } },
         { icon: G.refresh, title: "Transcribir de nuevo con más precisión", text: `Usa el modelo «${model}». Tarda más, pero queda mejor.`,
@@ -740,7 +769,7 @@ window.onEngine = (ev) => {
     if (t === "tx_started") store.set({ txBusy: true });
     if (["tx_done", "tx_error", "tx_canceled", "tx_nospeech"].includes(t)) store.set({ txBusy: false });
     if (ev.job && ev.job === S().tx.job) onPageTx(ev);
-    if (ev.job && ev.job === S().det.job) onDetailsTx(ev);
+    if (ev.job && ev.job === S().recTx?.job) onRecTx(ev);
     return;
   }
   const rec = S().rec;
@@ -945,7 +974,7 @@ $("#detDelete").addEventListener("click", () => confirmDelete(S().det.path, () =
 // Cambiar nombre desde la ficha
 const nameInput = $("#detName");
 $("#detRename").addEventListener("click", () => {
-  if (S().det.tx.phase === "running") { toast("Espera a que termine la transcripción.", G.warn); return; }
+  if (recTxFor(S().det.path)) { toast("Espera a que termine la transcripción.", G.warn); return; }
   nameInput.value = baseName(S().det.path);  // al editar se muestra el nombre completo
   nameInput.readOnly = false;
   nameInput.focus();
