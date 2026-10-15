@@ -69,6 +69,61 @@ def short_time(t):
     return f"{h:02}:{m:02}:{s:02}" if h else f"{m:02}:{s:02}"
 
 
+MAX_PHRASE_WORDS = 8  # frases de hasta 8 palabras ("vamos a ver", "buenas")
+MIN_LOOP = 4          # repetida 4 o más veces seguidas = Whisper se quedó en bucle
+KEEP_REPEATS = 2      # se dejan 2 ("buenas, buenas"), que sí es habla natural
+
+
+def _norm_word(word):
+    return re.sub(r"[^\w]", "", word.lower())
+
+
+def _loop_at(norm, i):
+    """(n, k) si en la posición i empieza una frase de n palabras repetida k >= MIN_LOOP veces."""
+    for n in range(1, MAX_PHRASE_WORDS + 1):
+        phrase = norm[i:i + n]
+        if len(phrase) < n or not all(phrase):
+            return None
+        k = 1
+        while norm[i + k * n:i + (k + 1) * n] == phrase:
+            k += 1
+        if k >= MIN_LOOP:
+            return n, k
+    return None
+
+
+def collapse_repeats(text):
+    """Quita las repeticiones en bucle que a veces genera Whisper.
+
+    "vamos a ver, vamos a ver, vamos a ver, vamos a ver, vamos" → "vamos a ver, vamos a ver"
+    Solo actúa con 4 o más repeticiones seguidas; una o dos se respetan.
+    """
+    words = text.split()
+    norm = [_norm_word(w) for w in words]
+    out, i, changed = [], 0, False
+    while i < len(words):
+        loop = _loop_at(norm, i)
+        if not loop:
+            out.append(words[i])
+            i += 1
+            continue
+        n, k = loop
+        kept = words[i:i + KEEP_REPEATS * n]
+        # La última palabra conservada cierra con la puntuación de la última repetición ("sí sí.").
+        closing = re.search(r"[^\w]*$", words[i + k * n - 1]).group()
+        kept[-1] = re.sub(r"[^\w]*$", "", kept[-1]) + closing
+        out.extend(kept)
+        phrase, i, changed = norm[i:i + n], i + k * n, True
+        rest = norm[i:]
+        if len(rest) < n and rest == phrase[:len(rest)]:  # repetición cortada al final
+            i = len(words)
+    if not changed:
+        return text
+    result = " ".join(out).rstrip(",;")
+    end = text.rstrip()[-1:]
+    return result + end if end in ".?!…" and result[-1:] not in ".?!…" else result
+
+
 def safe_name(name):
     """Solo reemplaza lo que Windows no permite, para que el .txt se llame igual que el video."""
     keep = "".join("_" if c in '<>:"/\\|?*' or ord(c) < 32 else c for c in name).strip(" .")
@@ -595,9 +650,11 @@ class Transcriber:
         started = time.time()
         # El filtro VAD acelera audios con silencios, pero descarta voz cantada o con
         # música de fondo, así que es opcional. Menos reintentos por tramo (temperature)
-        # para que las partes sin voz no frenen la transcripción.
+        # para que las partes sin voz no frenen la transcripción. Sin condicionar cada tramo
+        # al texto anterior: si no, una repetición equivocada se realimenta y Whisper entra en
+        # bucle ("vamos a ver, vamos a ver, vamos a ver…").
         segments, info = m.transcribe(audio, language=language, vad_filter=vad, beam_size=5,
-                                      temperature=(0.0, 0.2, 0.4))
+                                      temperature=(0.0, 0.2, 0.4), condition_on_previous_text=False)
         found = []
         last = {"t": time.time(), "pos": 0.0}
         done = threading.Event()
@@ -626,7 +683,7 @@ class Transcriber:
 
     @staticmethod
     def _segment(seg, timestamps, segment, progress, duration, started, info):
-        text = seg.text.strip()
+        text = collapse_repeats(seg.text.strip())
         if segment:
             segment(f"[{short_time(seg.start)}] {text}" if timestamps else text)
         if progress:
@@ -734,7 +791,7 @@ class LiveTranscriber:
                                        beam_size=1, condition_on_previous_text=False,
                                        initial_prompt=prompt)
         for s in segs:
-            text = s.text.strip()
+            text = collapse_repeats(s.text.strip())
             if text:
                 seg = (offset + s.start, offset + s.end, text)
                 self.segments.append(seg)
