@@ -143,3 +143,12 @@ def test_collapse_repeats_removes_whisper_loops(text, expected):
 ])
 def test_collapse_repeats_keeps_normal_speech(text):
     assert core.collapse_repeats(text) == text
+
+
+def test_recorder_temp_folder_stays_out_of_user_temp(tmp_path, tmp_path_factory):
+    """Las pruebas no deben dejar carpetas "reunion_*" en el %TEMP% del usuario."""
+    rec = core.MeetingRecorder(tmp_path, None, None, None, speaker_on=False, mic_on=False)
+    try:
+        assert rec.tmp.is_relative_to(tmp_path_factory.getbasetemp())
+    finally:
+        rec.cleanup()
