@@ -45,11 +45,22 @@ kernel32 = ctypes.windll.kernel32
 
 # ---------------------------------------------------------------- utilidades
 
+def run_ffmpeg(args, timeout=None, **kwargs):
+    """Ejecuta ffmpeg SIN acceso al teclado (stdin).
+
+    El motor recibe las órdenes de la app por su stdin. Un ffmpeg que lo hereda lo lee
+    buscando teclas ("q" para salir) y puede quedarse esperando ahí para siempre: así se
+    trabó una vez la unión de video y audio ("Guardando…" durante horas).
+    `timeout` (segundos) lo corta si aun así no termina: lanza subprocess.TimeoutExpired.
+    """
+    return subprocess.run([FFMPEG, "-nostdin", *args], stdin=subprocess.DEVNULL, capture_output=True,
+                          timeout=timeout, creationflags=NO_WINDOW, **kwargs)
+
+
 def load_audio(path):
     """Decodifica cualquier audio/video a mono 16 kHz float32 usando ffmpeg."""
-    cmd = [FFMPEG, "-nostdin", "-v", "error", "-i", str(path),
-           "-f", "f32le", "-ac", "1", "-ar", str(SAMPLE_RATE), "-"]
-    proc = subprocess.run(cmd, capture_output=True, creationflags=NO_WINDOW)
+    proc = run_ffmpeg(["-v", "error", "-i", str(path),
+                       "-f", "f32le", "-ac", "1", "-ar", str(SAMPLE_RATE), "-"])
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr.decode(errors="ignore").strip() or "ffmpeg falló")
     return np.frombuffer(proc.stdout, np.float32)
@@ -143,8 +154,7 @@ def png_b64(bgr, max_w):
 def media_info(path, thumb_width=480):
     """Duración, resolución, fps, tamaño y miniatura (PNG base64) de un archivo."""
     path = Path(path)
-    p = subprocess.run([FFMPEG, "-hide_banner", "-i", str(path)], capture_output=True,
-                       text=True, errors="ignore", creationflags=NO_WINDOW)
+    p = run_ffmpeg(["-hide_banner", "-i", str(path)], timeout=60, text=True, errors="ignore")
     info = {"path": str(path), "size": path.stat().st_size if path.exists() else 0,
             "duration": 0.0, "width": 0, "height": 0, "fps": 0, "has_video": False,
             "thumb": None}
@@ -157,10 +167,9 @@ def media_info(path, thumb_width=480):
         f = re.search(r"([\d.]+) fps", p.stderr)
         info["fps"] = round(float(f[1])) if f else 0
         at = min(1.0, info["duration"] / 2)
-        t = subprocess.run([FFMPEG, "-v", "error", "-ss", f"{at:.2f}", "-i", str(path),
-                            "-frames:v", "1", "-vf", f"scale={thumb_width}:-2",
-                            "-f", "image2pipe", "-vcodec", "png", "-"],
-                           capture_output=True, creationflags=NO_WINDOW)
+        t = run_ffmpeg(["-v", "error", "-ss", f"{at:.2f}", "-i", str(path),
+                        "-frames:v", "1", "-vf", f"scale={thumb_width}:-2",
+                        "-f", "image2pipe", "-vcodec", "png", "-"], timeout=60)
         if t.stdout:
             info["thumb"] = base64.b64encode(t.stdout).decode()
     return info
@@ -549,11 +558,17 @@ class MeetingRecorder:
         else:
             inputs = (["-i", str(raw_video)] if raw_video else []) + ["-i", str(wav_path)]
             vcodec = ["-c:v", "copy"] if raw_video else ["-vn"]
-            cmd = [FFMPEG, "-y", "-v", "error", *inputs, *vcodec,
-                   "-c:a", "aac", "-b:a", "128k", str(mp4_path)]
-            r = subprocess.run(cmd, capture_output=True, creationflags=NO_WINDOW)
-            if r.returncode != 0 or not mp4_path.exists() or mp4_path.stat().st_size == 0:
-                return self._rescue(raw_video, wav_path, mp4_path, r.stderr)
+            # Copiar el video y pasar el audio a AAC tarda ~1 s por minuto grabado: con este
+            # margen solo se corta si ffmpeg se trabó, y entonces se rescatan video y audio.
+            timeout = 300 + self.elapsed()
+            try:
+                r = run_ffmpeg(["-y", "-v", "error", *inputs, *vcodec, "-c:a", "aac", "-b:a", "128k",
+                                str(mp4_path)], timeout=timeout)
+                ok, stderr = r.returncode == 0, r.stderr
+            except subprocess.TimeoutExpired:
+                ok, stderr = False, f"ffmpeg no terminó en {timeout / 60:.0f} min".encode()
+            if not ok or not mp4_path.exists() or mp4_path.stat().st_size == 0:
+                return self._rescue(raw_video, wav_path, mp4_path, stderr)
         return mp4_path if mp4_path.exists() else None
 
     def _rescue(self, raw_video, wav_path, failed_mp4, stderr):

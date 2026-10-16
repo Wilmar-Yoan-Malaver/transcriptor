@@ -103,3 +103,43 @@ def test_empty_output_counts_as_failure(finished_recording, monkeypatch):
     rec.stop()
     assert f"Grabación {rec.stamp}.mp4" not in [p.name for p in out.iterdir()]
     assert len(list(out.iterdir())) == 2   # video y audio rescatados
+
+
+def test_merge_never_reads_keyboard_and_has_timeout(finished_recording, monkeypatch):
+    """Un ffmpeg con acceso a la entrada del motor se quedaba esperando teclas para siempre."""
+    rec, _out = finished_recording
+    calls = []
+
+    def fake_run(cmd, **kw):
+        calls.append((cmd, kw))
+        with open(cmd[-1], "wb") as f:
+            f.write(b"mp4-final")
+        return SimpleNamespace(returncode=0, stderr=b"")
+
+    monkeypatch.setattr(core.subprocess, "run", fake_run)
+    rec.stop()
+    cmd, kw = calls[-1]
+    assert "-nostdin" in cmd
+    assert kw["stdin"] is core.subprocess.DEVNULL
+    assert kw["timeout"] >= 300
+
+
+def test_stuck_merge_is_cut_and_recording_rescued(finished_recording, monkeypatch):
+    rec, out = finished_recording
+
+    def stuck_ffmpeg(cmd, **kw):
+        open(cmd[-1], "wb").close()   # alcanzó a crear el archivo, pero sin terminarlo
+        raise core.subprocess.TimeoutExpired(cmd, kw["timeout"])
+
+    monkeypatch.setattr(core.subprocess, "run", stuck_ffmpeg)
+    result = rec.stop()
+    rec.cleanup()
+    names = sorted(p.name for p in out.iterdir())
+    assert names == [f"Grabación {rec.stamp} (audio).wav", f"Grabación {rec.stamp} (video).mp4"]
+    assert result.name.endswith("(video).mp4")
+    assert any("no terminó" in e for e in rec.errors)
+
+
+def test_run_ffmpeg_real_binary_ignores_stdin():
+    r = core.run_ffmpeg(["-version"], timeout=30)
+    assert r.returncode == 0 and b"ffmpeg version" in r.stdout

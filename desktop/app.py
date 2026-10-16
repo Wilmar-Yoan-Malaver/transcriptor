@@ -651,7 +651,8 @@ class Api:
             f"$s.IconLocation='{q(UI / 'icon.ico')},0';$s.Description='Graba, transcribe y comparte';"
             f"$s.Save();"
             for folder in ("Desktop", "Programs"))
-        r = subprocess.run([str(POWERSHELL), "-NoProfile", "-Command", script], creationflags=NO_WINDOW)
+        r = subprocess.run([str(POWERSHELL), "-NoProfile", "-Command", script],
+                           stdin=subprocess.DEVNULL, creationflags=NO_WINDOW)
         return r.returncode == 0
 
     def open_log(self):
@@ -668,7 +669,7 @@ class Api:
             return False
         lit = str(p).replace("'", "''")  # comillas simples de PowerShell: no se puede inyectar código
         r = subprocess.run([str(POWERSHELL), "-NoProfile", "-Command", f"Set-Clipboard -LiteralPath '{lit}'"],
-                           creationflags=NO_WINDOW)
+                           stdin=subprocess.DEVNULL, creationflags=NO_WINDOW)
         return r.returncode == 0
 
 
