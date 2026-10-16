@@ -96,6 +96,15 @@ def test_malformed_messages_do_not_kill_engine(engine, raw):
     engine.events.clear()
 
 
+def test_engine_messages_follow_app_language(engine):
+    engine.send(cmd="set_language", lang="en")
+    engine.send(cmd="no_existe_en")
+    assert engine.wait("error")["message"] == "Unknown command: no_existe_en"
+    engine.send(cmd="set_language", lang="es")
+    engine.send(cmd="no_existe_es")
+    assert engine.wait("error")["message"] == "Orden desconocida: no_existe_es"
+
+
 def test_shutdown_exits_cleanly(engine):
     engine.send(cmd="shutdown")
     assert engine.proc.wait(timeout=30) == 0

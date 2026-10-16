@@ -1,6 +1,6 @@
 """Servidor del motor: recibe órdenes JSON (una por línea) por stdin y emite eventos por stdout.
 
-La interfaz (WPF) lanza este proceso y se comunica solo por este canal.
+La ventana (desktop/app.py) lanza este proceso y se comunica solo por este canal.
 """
 
 import json
@@ -13,6 +13,7 @@ from pathlib import Path
 
 # El Python "embeddable" (versión portable) no agrega la carpeta del script a sys.path.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from i18n import set_language, tr  # noqa: E402
 
 # El canal stdout queda reservado para el protocolo; cualquier print/aviso de librerías
 # (incluido código nativo) se redirige a stderr.
@@ -30,7 +31,7 @@ def emit(kind, **data):
         _proto.flush()
 
 
-emit("status", text="Cargando motor…")
+emit("status", text=tr("engine.loading"))
 import core  # noqa: E402  (importación lenta: Whisper, OpenCV…)
 
 
@@ -67,11 +68,15 @@ class Engine:
     def list_devices(self, _msg):
         emit("devices", **core.list_devices())
 
+    def set_language(self, msg):
+        """Idioma de los mensajes (\"es\" o \"en\"): lo envía la ventana al cambiarlo en Configuración."""
+        set_language(msg.get("lang"))
+
     # ---------------------------------------------------------------- grabación
     def start_recording(self, msg):
         with self.rec_lock:
             if self.recorder:
-                emit("rec_error", message="Ya hay una grabación en curso.")
+                emit("rec_error", message=tr("rec.busy"))
                 return
             # speaker/mic = dispositivos; speaker_on/mic_on = si arrancan activos (se pueden
             # activar o silenciar después con set_audio).
@@ -85,7 +90,7 @@ class Engine:
             except Exception as e:  # noqa: BLE001
                 rec.stop(discard=True)
                 rec.cleanup()
-                emit("rec_error", message=f"No se pudo iniciar la grabación: {e}")
+                emit("rec_error", message=tr("rec.start_failed", error=e))
                 return
             self.recorder = rec
             self.live = None
@@ -127,8 +132,7 @@ class Engine:
         try:
             rec.set_source(key, bool(msg["on"]))  # el cambio lo anuncia _levels_loop (rec_audio)
         except Exception as e:  # noqa: BLE001
-            what = "el micrófono" if key == "mic" else "el audio del sistema"
-            emit("warning", message=f"No se pudo activar {what}: {e}")
+            emit("warning", message=tr(f"rec.enable_failed_{'mic' if key == 'mic' else 'sys'}", error=e))
             emit("rec_audio", audio=rec.active)  # para que la interfaz vuelva al estado real
 
     def pause_recording(self, _msg):
@@ -158,7 +162,7 @@ class Engine:
                 live_segments = []
                 if live:
                     if not discard:
-                        emit("live_status", text="Terminando la transcripción en vivo…")
+                        emit("live_status", text=tr("live.finishing"))
                     live_segments = live.finish()
                 if discard:
                     emit("rec_discarded")
@@ -166,7 +170,7 @@ class Engine:
                     self.last_live = {"path": str(mp4), "segments": live_segments}
                     emit("rec_saved", live_segments=len(live_segments), **core.media_info(mp4))
                 else:
-                    emit("rec_error", message="No se grabó nada.")
+                    emit("rec_error", message=tr("rec.nothing"))
             except Exception as e:  # noqa: BLE001
                 emit("rec_error", message=str(e))
             finally:
@@ -180,7 +184,7 @@ class Engine:
 
     def youtube(self, msg):
         def fetch():
-            emit("tx_status", text="Conectando con YouTube…", job=msg.get("job"))
+            emit("tx_status", text=tr("tx.connecting_youtube"), job=msg.get("job"))
             path, title, tmp = core.download_youtube(
                 msg["url"], lambda pct: emit("tx_download", pct=round(pct, 1), job=msg.get("job")))
             return path, title, tmp
@@ -189,7 +193,7 @@ class Engine:
 
     def _run_tx(self, msg, get_source):
         if self.tx_thread and self.tx_thread.is_alive():
-            emit("tx_error", message="Ya hay una transcripción en curso.", job=msg.get("job"))
+            emit("tx_error", message=tr("tx.busy"), job=msg.get("job"))
             return
         self.tx_cancel.clear()
         job = msg.get("job")
@@ -232,7 +236,7 @@ class Engine:
         """Guarda como .txt/.srt lo que se transcribió en vivo durante la última grabación."""
         last = self.last_live
         if not last or last["path"] != msg["path"]:
-            emit("tx_error", message="Ya no está disponible la transcripción en vivo.", job=msg.get("job"))
+            emit("tx_error", message=tr("live.unavailable"), job=msg.get("job"))
             return
         path = Path(last["path"])
         txt, srt = core.write_transcript(path.parent, path.stem, last["segments"],
@@ -294,7 +298,7 @@ def main():
                 break
             handler = getattr(eng, cmd, None)
             if handler is None or cmd.startswith("_"):
-                emit("error", message=f"Orden desconocida: {cmd}")
+                emit("error", message=tr("engine.unknown_cmd", cmd=cmd))
                 continue
             handler(msg)
         except Exception as e:  # noqa: BLE001

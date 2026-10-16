@@ -5,7 +5,9 @@ import globals from "globals";
 // Lo que ui/lib.js deja disponible para ui/app.js (se cargan como <script> en ese orden).
 const libGlobals = Object.fromEntries(
   ["PAGE_SIZE", "NAME_MAX", "shortName", "fmtDur", "fmtSize", "fmtDate", "baseName", "dirName", "withExt",
-   "jobId", "srcKey", "esc", "textLines", "isBase64", "pageCount", "pageNumbers"].map((name) => [name, "readonly"]),
+   "jobId", "srcKey", "esc", "textLines", "isBase64", "pageCount", "pageNumbers",
+   // ui/i18n.js
+   "LANG", "t", "tn", "setLang", "locale", "applyI18n"].map((name) => [name, "readonly"]),
 );
 
 export default [
@@ -25,7 +27,7 @@ export default [
     },
   },
   {
-    files: ["ui/lib.js"],
+    files: ["ui/lib.js", "ui/i18n.js"],
     languageOptions: { globals: { module: "writable" } },
     // Sus funciones se usan desde app.js, no dentro del propio archivo.
     rules: { "no-unused-vars": "off" },
