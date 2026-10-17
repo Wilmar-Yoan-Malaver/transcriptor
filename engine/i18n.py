@@ -32,9 +32,12 @@ MESSAGES = {
         "rec.merge_failed": "No se pudo unir el video y el audio{detail}. "
                             "Se guardaron por separado para no perder la grabación.",
         "rec.merge_timeout": "ffmpeg no terminó en {minutes} min",
-        "rec.folder_blocked": "Windows no dejó guardar en {folder} ({error}). La grabación quedó en {path}. "
-                              "Si tienes activado el acceso controlado a carpetas, permite Transcriptor en "
-                              "Seguridad de Windows › Protección contra ransomware.",
+        "rec.folder_blocked": "Windows no dejó guardar en {folder} ({error}). La grabación está a salvo en "
+                              "{path}. Suele ser el acceso controlado a carpetas "
+                              "(protección contra ransomware).",
+        "folder.allow_failed": "Windows no agregó Transcriptor a las aplicaciones permitidas.",
+        "folder.move_failed": "No se pudo mover la grabación a {folder}: {error}",
+        "folder.nothing": "No hay grabaciones pendientes de mover.",
         "rec.file_name": "Grabación {stamp}",
         "rec.screen_label": "Pantalla {n}  ({w}×{h})",
         "rec.screen_primary": "  · principal",
@@ -94,9 +97,11 @@ MESSAGES = {
                             "They were saved separately so the recording isn't lost.",
         "rec.merge_timeout": "ffmpeg didn't finish within {minutes} min",
         "rec.folder_blocked": "Windows didn't allow saving to {folder} ({error}). "
-                              "The recording was saved to {path}. "
-                              "If Controlled folder access is on, allow Transcriptor in "
-                              "Windows Security › Ransomware protection.",
+                              "The recording is safe in {path}. "
+                              "This is usually Controlled folder access (ransomware protection).",
+        "folder.allow_failed": "Windows didn't add Transcriptor to the allowed apps.",
+        "folder.move_failed": "Couldn't move the recording to {folder}: {error}",
+        "folder.nothing": "There are no recordings waiting to be moved.",
         "rec.file_name": "Recording {stamp}",
         "rec.screen_label": "Screen {n}  ({w}×{h})",
         "rec.screen_primary": "  · primary",

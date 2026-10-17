@@ -58,5 +58,26 @@
       <RegistryValue Root="HKLM" Key="Software\Transcriptor" Name="InstallDir" Type="string" Value="[INSTALLFOLDER]"
                      KeyPath="yes" />
     </Component>
+
+    <!--
+      Acceso controlado a carpetas (protección contra ransomware de Windows Defender): si está activado,
+      Windows no deja guardar las grabaciones en Documentos. Al instalar se permiten los dos programas
+      de la app (pythonw.exe = ventana, python.exe = motor), con su ruta exacta en Archivos de programa,
+      donde solo un administrador puede cambiar archivos. Al desinstalar se quitan; en una actualización
+      no, porque las rutas son las mismas.
+      Return="ignore": si Defender no está activo (otro antivirus), la instalación sigue igual y la app
+      ofrece "Permitir Transcriptor" cuando Windows bloquee la carpeta.
+    -->
+    <CustomAction Id="AllowControlledFolderAccess" Directory="INSTALLFOLDER" Execute="deferred"
+                  Impersonate="no" Return="ignore"
+                  ExeCommand="&quot;[System64Folder]WindowsPowerShell\v1.0\powershell.exe&quot; -NoProfile -NonInteractive -Command &quot;Add-MpPreference -ControlledFolderAccessAllowedApplications '[INSTALLFOLDER]python\pythonw.exe','[INSTALLFOLDER]python\python.exe'&quot;" />
+    <CustomAction Id="RemoveControlledFolderAccess" Directory="INSTALLFOLDER" Execute="deferred"
+                  Impersonate="no" Return="ignore"
+                  ExeCommand="&quot;[System64Folder]WindowsPowerShell\v1.0\powershell.exe&quot; -NoProfile -NonInteractive -Command &quot;Remove-MpPreference -ControlledFolderAccessAllowedApplications '[INSTALLFOLDER]python\pythonw.exe','[INSTALLFOLDER]python\python.exe'&quot;" />
+    <InstallExecuteSequence>
+      <Custom Action="AllowControlledFolderAccess" Before="InstallFinalize" Condition="NOT REMOVE" />
+      <Custom Action="RemoveControlledFolderAccess" Before="RemoveFiles"
+              Condition="REMOVE=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
+    </InstallExecuteSequence>
   </Package>
 </Wix>

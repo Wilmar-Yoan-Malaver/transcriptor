@@ -8,6 +8,7 @@ no le quita fluidez al resto del PC.
 import json
 import logging
 import os
+import shutil
 import subprocess
 import sys
 import threading
@@ -33,6 +34,10 @@ MODELS = (Path(sys.executable).parent if FROZEN else ROOT) / "models"
 DATA = Path(os.environ["APPDATA"]) / "Transcriptor"
 CONFIG_FILE = DATA / "config.json"
 ENGINE_LOG = DATA / "engine.log"
+# Donde el motor deja una grabación si Windows no lo deja guardar en la carpeta elegida (core.RESCUE_DIR).
+RESCUE_DIR = Path(os.environ.get("LOCALAPPDATA", DATA)) / "Transcriptor" / "Recuperadas"
+# Carpeta fuera de las que protege el acceso controlado a carpetas (Documentos, Escritorio, Imágenes…).
+UNPROTECTED_DIR = Path.home() / "Transcripciones"
 VERSION = "2.3.1"
 
 TITLE = "Transcriptor"
@@ -209,6 +214,7 @@ class App:
         self.bar_home = None        # x de la barra compacta, si se corrió para desplegarse completa
         self.status = tr("engine.starting")
         self.monitors, self.devices = [], {}
+        self.rescued = []           # grabaciones que quedaron en RESCUE_DIR porque Windows bloqueó la carpeta
 
     # ------------------------------------------------------------- utilidades
     def js(self, window, fn, payload=None):
@@ -276,6 +282,10 @@ class App:
         elif t == "rec_saving":
             self.rec_state = "saving"
             self.js(self.bar, "setSaving")
+        elif t == "folder_blocked":
+            # Las rutas las da el motor, no la interfaz; igual solo se aceptan las de RESCUE_DIR.
+            self.rescued = [Path(f) for f in ev.get("files", []) if Path(f).parent == RESCUE_DIR]
+            ev = {**ev, "unprotected": str(UNPROTECTED_DIR)}
         elif t in ("rec_saved", "rec_discarded", "rec_error"):
             self._end_recording_ui()
             if t == "rec_saved":
@@ -423,6 +433,28 @@ class App:
         if self.rec_state in ("recording", "paused"):
             self.engine.send({"cmd": "stop_recording", "discard": discard})
 
+    def recover_rescued(self, folder):
+        """Mueve las grabaciones rescatadas a `folder`. Devuelve {"path": la principal} o {"error"}."""
+        if not self.rescued:
+            return {"error": tr("folder.nothing")}
+        moved = []
+        try:
+            folder.mkdir(parents=True, exist_ok=True)
+            for src in list(self.rescued):
+                target = folder / src.name
+                if target.exists():
+                    raise FileExistsError(tr("file.name_exists"))
+                shutil.move(str(src), target)
+                self.rescued.remove(src)
+                moved.append(target)
+                # La transcripción en vivo pendiente sigue a la grabación (igual que al renombrar).
+                self.engine.send({"cmd": "live_moved", "old": str(src), "new": str(target)})
+        except OSError as e:
+            if moved:  # una parte ya está en la carpeta: se sigue con esa
+                return {"path": str(moved[0])}
+            return {"error": tr("folder.move_failed", folder=folder, error=e)}
+        return {"path": str(moved[0])}
+
     # ------------------------------------------------------------------ cierre
     def on_closing(self):
         if self.rec_state in ("recording", "paused"):
@@ -563,6 +595,37 @@ class Api:
         if self._app.main.create_confirmation_dialog(
                 tr("rec.discard_title"), tr("rec.discard_text")):
             self._app.stop_recording(discard=True)
+
+    # ------------------------------------------- carpeta bloqueada por Windows
+    def allow_folder_access(self):
+        """Agrega esta app a las permitidas del acceso controlado a carpetas (pide permiso de
+        administrador) y mueve la grabación rescatada a la carpeta elegida."""
+        if FROZEN:
+            exes = [Path(sys.executable)]
+        else:  # la ventana usa pythonw.exe y el motor python.exe: los dos escriben en la carpeta
+            exes = [p for p in (Path(sys.executable).with_name(n) for n in ("pythonw.exe", "python.exe"))
+                    if p.exists()]
+        apps = ",".join("'" + str(p).replace("'", "''") + "'" for p in exes)
+        command = f"Add-MpPreference -ControlledFolderAccessAllowedApplications {apps} -ErrorAction Stop"
+        try:
+            code = winutil.run_elevated(POWERSHELL, f'-NoProfile -NonInteractive -Command "{command}"')
+        except OSError as e:
+            log.warning("No se pudo pedir permiso de administrador: %s", e)
+            return {"error": tr("folder.allow_failed")}
+        if code is None:
+            return {"canceled": True}
+        if code != 0:
+            return {"error": tr("folder.allow_failed")}
+        return self._app.recover_rescued(Path(self._app.cfg["outputDir"]))
+
+    def use_unprotected_folder(self):
+        """Cambia la carpeta de grabaciones a una que Windows no protege y mueve ahí la grabación."""
+        r = self._app.recover_rescued(UNPROTECTED_DIR)
+        if "path" in r:
+            self._app.cfg["outputDir"] = str(UNPROTECTED_DIR)
+            self._app.cfg.save()
+            r["folder"] = str(UNPROTECTED_DIR)
+        return r
 
     # ---------------------------------------------------------- diálogos
     def pick_folder(self):

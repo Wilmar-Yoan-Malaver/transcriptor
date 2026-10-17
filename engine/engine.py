@@ -159,6 +159,11 @@ class Engine:
                 mp4 = rec.stop(discard=discard)
                 for err in rec.errors:
                     emit("warning", message=err)
+                if rec.blocked:
+                    files = [str(f) for f in rec.blocked["files"]]
+                    emit("folder_blocked", folder=str(rec.out_dir), files=files,
+                         message=tr("rec.folder_blocked", folder=rec.out_dir, path=files[0],
+                                    error=rec.blocked["error"]))
                 live_segments = []
                 if live:
                     if not discard:
