@@ -35,6 +35,8 @@ from i18n import tr
 from windows_capture import WindowsCapture
 
 FFMPEG = imageio_ffmpeg.get_ffmpeg_exe()
+# Si la carpeta de salida no deja escribir, las grabaciones terminadas se guardan aquí para no perderlas.
+RESCUE_DIR = Path(os.environ.get("LOCALAPPDATA", tempfile.gettempdir())) / "Transcriptor" / "Recuperadas"
 NO_WINDOW = subprocess.CREATE_NO_WINDOW
 SAMPLE_RATE = 16000
 REC_RATE = 48000
@@ -260,22 +262,41 @@ def _wgc_kwargs(source):
     return {"window_hwnd": source["hwnd"]}
 
 
+# Ocultar el borde amarillo de Windows (para que no salga en el video) no está disponible en todas
+# las versiones de Windows: ahí la captura fallaba con "Toggling the capture border is not supported".
+# Se intenta ocultarlo y, si Windows no lo permite, se graba con el borde (y se recuerda para la próxima).
+_BORDER = {"can_hide": True}
+
+
+def start_capture(source, on_frame_arrived, on_closed, **options):
+    """Arranca Windows Graphics Capture en su propio hilo. Devuelve el control para detenerla."""
+    for draw_border in ((False, None) if _BORDER["can_hide"] else (None,)):
+        cap = WindowsCapture(draw_border=draw_border, **options, **_wgc_kwargs(source))
+        cap.event(on_frame_arrived)  # la librería reconoce los avisos por el nombre de la función
+        cap.event(on_closed)
+        try:
+            return cap.start_free_threaded()
+        except Exception as e:
+            if draw_border is False and "border" in str(e).lower():
+                _BORDER["can_hide"] = False
+                continue
+            raise
+    raise RuntimeError("Windows Graphics Capture no arrancó")  # no se llega: el último intento lanza
+
+
 def grab_frame(source, timeout=2.0):
     """Toma una sola imagen (BGRA) de un monitor o ventana. None si no hay imagen."""
     got, done = {}, threading.Event()
-    cap = WindowsCapture(cursor_capture=False, draw_border=False, **_wgc_kwargs(source))
 
-    @cap.event
     def on_frame_arrived(frame, control):
         got["f"] = frame.frame_buffer.copy()
         done.set()
         control.stop()
 
-    @cap.event
     def on_closed():
         done.set()
 
-    ctl = cap.start_free_threaded()
+    ctl = start_capture(source, on_frame_arrived, on_closed, cursor_capture=False)
     done.wait(timeout)
     try:
         ctl.stop()
@@ -315,11 +336,6 @@ class ScreenCapture:
     def start(self):
         if self.source["kind"] == "window" and user32.IsIconic(self.source["hwnd"]):
             user32.ShowWindow(self.source["hwnd"], 9)  # SW_RESTORE
-        cap = WindowsCapture(cursor_capture=self.cursor, draw_border=False,
-                             minimum_update_interval=max(1, 1000 // self.fps),
-                             **_wgc_kwargs(self.source))
-
-        @cap.event
         def on_frame_arrived(frame, control):
             if self._stop.is_set():
                 control.stop()
@@ -328,11 +344,11 @@ class ScreenCapture:
             with self._lock:
                 self._latest = f
 
-        @cap.event
         def on_closed():
             self.closed.set()
 
-        self._control = cap.start_free_threaded()
+        self._control = start_capture(self.source, on_frame_arrived, on_closed, cursor_capture=self.cursor,
+                                      minimum_update_interval=max(1, 1000 // self.fps))
         self._writer = threading.Thread(target=self._write_loop, daemon=True)
         self._writer.start()
 
@@ -555,22 +571,38 @@ class MeetingRecorder:
         self.out_dir.mkdir(parents=True, exist_ok=True)
         mp4_path = self.out_dir / f"{tr('rec.file_name', stamp=self.stamp)}.mp4"
         if raw_video and not wav_path:
-            shutil.move(str(raw_video), mp4_path)
-        else:
-            inputs = (["-i", str(raw_video)] if raw_video else []) + ["-i", str(wav_path)]
-            vcodec = ["-c:v", "copy"] if raw_video else ["-vn"]
-            # Copiar el video y pasar el audio a AAC tarda ~1 s por minuto grabado: con este
-            # margen solo se corta si ffmpeg se trabó, y entonces se rescatan video y audio.
-            timeout = 300 + self.elapsed()
-            try:
-                r = run_ffmpeg(["-y", "-v", "error", *inputs, *vcodec, "-c:a", "aac", "-b:a", "128k",
-                                str(mp4_path)], timeout=timeout)
-                ok, stderr = r.returncode == 0, r.stderr
-            except subprocess.TimeoutExpired:
-                ok, stderr = False, tr("rec.merge_timeout", minutes=f"{timeout / 60:.0f}").encode()
-            if not ok or not mp4_path.exists() or mp4_path.stat().st_size == 0:
-                return self._rescue(raw_video, wav_path, mp4_path, stderr)
-        return mp4_path if mp4_path.exists() else None
+            return self._deliver(raw_video, mp4_path)
+        # ffmpeg escribe en la carpeta temporal y Python mueve el resultado a la carpeta de salida:
+        # el "acceso controlado a carpetas" de Windows Defender bloquea a ffmpeg si escribe en Documentos.
+        merged = self.tmp / "final.mp4"
+        inputs = (["-i", str(raw_video)] if raw_video else []) + ["-i", str(wav_path)]
+        vcodec = ["-c:v", "copy"] if raw_video else ["-vn"]
+        # Copiar el video y pasar el audio a AAC tarda ~1 s por minuto grabado: con este
+        # margen solo se corta si ffmpeg se trabó, y entonces se rescatan video y audio.
+        timeout = 300 + self.elapsed()
+        try:
+            r = run_ffmpeg(["-y", "-v", "error", *inputs, *vcodec, "-c:a", "aac", "-b:a", "128k",
+                            str(merged)], timeout=timeout)
+            ok, stderr = r.returncode == 0, r.stderr
+        except subprocess.TimeoutExpired:
+            ok, stderr = False, tr("rec.merge_timeout", minutes=f"{timeout / 60:.0f}").encode()
+        if not ok or not merged.exists() or merged.stat().st_size == 0:
+            return self._rescue(raw_video, wav_path, merged, stderr)
+        return self._deliver(merged, mp4_path)
+
+    def _deliver(self, src, target):
+        """Mueve un archivo terminado a la carpeta de salida. Si Windows no deja escribir ahí (por
+        ejemplo el acceso controlado a carpetas), lo deja en RESCUE_DIR: cleanup() borraría la carpeta
+        temporal y se perdería la grabación."""
+        try:
+            shutil.move(str(src), target)
+            return Path(target)
+        except OSError as e:
+            RESCUE_DIR.mkdir(parents=True, exist_ok=True)
+            fallback = RESCUE_DIR / Path(target).name
+            shutil.move(str(src), fallback)
+            self.errors.append(tr("rec.folder_blocked", folder=self.out_dir, path=fallback, error=e))
+            return fallback
 
     def _rescue(self, raw_video, wav_path, failed_mp4, stderr):
         """ffmpeg no pudo unir video y audio (disco lleno, archivo dañado…): se conservan los dos
@@ -582,8 +614,7 @@ class MeetingRecorder:
         for src, suffix in ((raw_video, " (video).mp4"), (wav_path, " (audio).wav")):
             if src and Path(src).exists():
                 target = self.out_dir / f"{tr('rec.file_name', stamp=self.stamp)}{suffix}"
-                shutil.move(str(src), target)
-                saved.append(target)
+                saved.append(self._deliver(src, target))
         return saved[0] if saved else None
 
     def cleanup(self):
