@@ -53,3 +53,9 @@ def test_expanding_with_room_stays_in_place(bar):
 def test_fit_rejects_invalid_sizes(bar, w, h):
     assert bar.api.fit(w, h, False) is False
     assert bar.moves == []
+
+
+def test_bar_minimum_size_lets_it_shrink_to_its_content():
+    # La barra compacta mide ~148x46 (px lógicos); el mínimo por defecto de pywebview (200x100) la agrandaba.
+    assert app.BAR_MIN[0] < 148 and app.BAR_MIN[1] < 46
+    assert app.BAR_MIN[0] <= app.BAR_SIZE[0] and app.BAR_MIN[1] <= app.BAR_SIZE[1]
