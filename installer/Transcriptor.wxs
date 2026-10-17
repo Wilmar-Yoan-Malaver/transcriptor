@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Instalador MSI de Transcriptor (WiX Toolset 5).
+
+  Empaqueta la carpeta que arma build\build_portable.py (Python oficial firmado + librerías + app +
+  modelos). La instalación, las actualizaciones y la desinstalación las hace Windows Installer, así
+  que no hay ningún desinstalador propio sin firmar: lo único que se firma es este .msi.
+
+  Uso (ver build\build_installer.py):
+    wix build installer\Transcriptor.wxs -arch x64 -d Version=2.2.1
+              -bindpath app=dist\Transcriptor-portable -o dist\Transcriptor-2.2.1.msi
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package Name="Transcriptor" Manufacturer="Wilmar Yoan Malaver" Version="$(Version)"
+           UpgradeCode="6C1F7A2E-3B8D-4E5A-9C47-2D0B8E91F3A5" Scope="perMachine" Compressed="yes">
+    <!-- "Subject" del MSI = nombre del proyecto: SignPath lo exige y lo verifica al firmar. -->
+    <SummaryInformation Description="Transcriptor" Manufacturer="Wilmar Yoan Malaver" />
+
+    <!-- Instalar una versión nueva reemplaza la anterior; no se puede volver a una más vieja encima. -->
+    <MajorUpgrade DowngradeErrorMessage="Ya hay una versión más nueva de Transcriptor instalada. / A newer version of Transcriptor is already installed." />
+    <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
+
+    <Icon Id="AppIcon" SourceFile="!(bindpath.app)app\ui\icon.ico" />
+    <Property Id="ARPPRODUCTICON" Value="AppIcon" />
+    <Property Id="ARPURLINFOABOUT" Value="https://github.com/Wilmar-Yoan-Malaver/transcriptor" />
+    <Property Id="ARPHELPLINK" Value="https://github.com/Wilmar-Yoan-Malaver/transcriptor/issues" />
+    <Property Id="ARPNOMODIFY" Value="1" />
+
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="Transcriptor" />
+    </StandardDirectory>
+
+    <Feature Id="Main" Title="Transcriptor">
+      <ComponentGroupRef Id="AppFiles" />
+      <ComponentRef Id="Shortcuts" />
+    </Feature>
+
+    <!-- Todo el contenido de la carpeta portable, menos lo que solo tiene sentido en el zip. -->
+    <ComponentGroup Id="AppFiles" Directory="INSTALLFOLDER">
+      <Files Include="!(bindpath.app)**">
+        <Exclude Files="!(bindpath.app)Transcriptor.cmd" />
+        <Exclude Files="!(bindpath.app)LEEME.txt" />
+      </Files>
+    </ComponentGroup>
+
+    <!-- Accesos directos en el menú Inicio y el Escritorio (se quitan al desinstalar). -->
+    <StandardDirectory Id="ProgramMenuFolder" />
+    <StandardDirectory Id="DesktopFolder" />
+    <Component Id="Shortcuts" Directory="INSTALLFOLDER" Guid="9E4B2C71-5A3F-4D86-B0E2-7F1C3A8D6B24">
+      <Shortcut Id="StartMenuShortcut" Directory="ProgramMenuFolder" Name="Transcriptor"
+                Description="Graba, transcribe y comparte / Record, transcribe and share"
+                Target="[INSTALLFOLDER]python\pythonw.exe" Arguments="&quot;[INSTALLFOLDER]app\Transcriptor.pyw&quot;"
+                WorkingDirectory="INSTALLFOLDER" Icon="AppIcon" />
+      <Shortcut Id="DesktopShortcut" Directory="DesktopFolder" Name="Transcriptor"
+                Description="Graba, transcribe y comparte / Record, transcribe and share"
+                Target="[INSTALLFOLDER]python\pythonw.exe" Arguments="&quot;[INSTALLFOLDER]app\Transcriptor.pyw&quot;"
+                WorkingDirectory="INSTALLFOLDER" Icon="AppIcon" />
+      <RegistryValue Root="HKLM" Key="Software\Transcriptor" Name="InstallDir" Type="string" Value="[INSTALLFOLDER]"
+                     KeyPath="yes" />
+    </Component>
+  </Package>
+</Wix>

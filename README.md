@@ -3,6 +3,27 @@
 Graba tu pantalla, una ventana o una reunión y conviértela en texto con Whisper, todo en tu PC.
 También transcribe archivos de video/audio y links de YouTube, incluso en vivo mientras grabas.
 
+## Funciones
+
+- **Grabar** la pantalla completa, una ventana o solo audio, con el audio del escritorio, el micrófono o ambos.
+- **Transcribir** grabaciones, archivos de video o audio y links de YouTube con Whisper. Todo se procesa en tu PC.
+- **Transcripción en vivo** mientras grabas.
+- **Historial** con las grabaciones y sus transcripciones (.txt y subtítulos .srt).
+- **Idioma de la app:** español o inglés.
+
+## Descargar e instalar
+
+En [Releases](https://github.com/Wilmar-Yoan-Malaver/transcriptor/releases):
+
+- **`Transcriptor-X.Y.Z.msi` (instalador):** instala la app en *Archivos de programa*, con accesos directos en el
+  menú Inicio y el Escritorio. Se desinstala desde *Configuración › Aplicaciones*; tus grabaciones
+  (Documentos\Transcripciones) y tu configuración se conservan. Una versión nueva se instala encima.
+- **`Transcriptor-portable.zip`:** no se instala. Descomprimir y abrir `Transcriptor.cmd`.
+
+Cada archivo trae su `.sha256` para comprobar que llegó completo: `Get-FileHash <archivo>` en PowerShell.
+
+Requisitos: Windows 10 u 11 de 64 bits.
+
 ## Estructura
 
 ```
@@ -83,6 +104,19 @@ npm test
 Genera `dist\Transcriptor-portable\` y `dist\Transcriptor-portable.zip`: Python oficial firmado +
 librerías + app + modelos (tiny, base, small). Se abre con `Transcriptor.cmd`.
 
+### Instalador MSI
+
+Requiere [WiX Toolset 5](https://wixtoolset.org) (`dotnet tool install --global wix --version 5.0.2`).
+Después de armar la versión portable:
+
+```bash
+%USERPROFILE%\.venvs\transcriptor\Scripts\python.exe build\build_installer.py
+```
+
+Genera `dist\Transcriptor-X.Y.Z.msi` y su `.sha256` desde `installer\Transcriptor.wxs`. Las releases oficiales
+no se arman en un PC: las arma GitHub Actions (`.github/workflows/release.yml`) a partir del código, al subir
+una etiqueta `vX.Y.Z`. Si SignPath está configurado, el workflow además firma el MSI.
+
 ### .exe con PyInstaller
 
 ```bash
@@ -104,3 +138,37 @@ from faster_whisper import download_model
 for name in ("tiny", "base", "small"):
     download_model(name, output_dir=f"dist/_staging/models/{name}")
 ```
+
+## Code signing policy
+
+Free code signing provided by [SignPath.io](https://about.signpath.io), certificate by
+[SignPath Foundation](https://signpath.org).
+
+- Committers and reviewers: [Wilmar-Yoan-Malaver](https://github.com/Wilmar-Yoan-Malaver)
+- Approvers: [Wilmar-Yoan-Malaver](https://github.com/Wilmar-Yoan-Malaver)
+
+Solo se firma el instalador MSI, armado por GitHub Actions a partir del código de este repositorio
+(`.github/workflows/release.yml`). Cada firma se aprueba a mano. La configuración de firma está en
+`.signpath/artifact-configuration.xml`.
+
+*Only the MSI installer is signed. It is built by GitHub Actions from the source code in this repository,
+and every signing request is approved manually.*
+
+## Privacidad / Privacy
+
+This program will not transfer any information to other networked systems unless specifically requested
+by the user or the person installing or operating it.
+
+Las grabaciones y transcripciones se procesan y guardan solo en tu PC. La app usa internet únicamente
+cuando lo pides:
+- para descargar un modelo de Whisper que no venga incluido, desde Hugging Face ([política de privacidad](https://huggingface.co/privacy));
+- para bajar el audio de un link de YouTube que pegues ([política de privacidad de Google](https://policies.google.com/privacy)).
+
+*Recordings and transcriptions are processed and stored only on your PC. The app uses the internet only
+when you ask it to: to download a Whisper model that isn't bundled (Hugging Face) or to fetch the audio of
+a YouTube link you paste.*
+
+## Licencia
+
+[Apache 2.0](LICENSE). Los componentes de terceros incluidos en los paquetes tienen sus propias licencias:
+ver [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
