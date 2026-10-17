@@ -90,6 +90,15 @@ const I18N = {
     "live.redo": "Transcribir de nuevo con más precisión",
     "live.redoHint": "Usa el modelo «{model}». Tarda más, pero queda mejor.",
 
+    "blocked.title": "Windows bloqueó la carpeta de grabaciones",
+    "blocked.allow": "Permitir Transcriptor",
+    "blocked.allowHint": "Windows pedirá permiso de administrador. Se hace una sola vez en este PC.",
+    "blocked.other": "Usar otra carpeta",
+    "blocked.otherHint": "Guardar desde ahora en {folder}, que Windows no protege.",
+    "blocked.allowed": "Listo: Transcriptor ya puede guardar en tu carpeta.",
+    "blocked.moved": "Las grabaciones se guardarán en {folder}.",
+    "blocked.canceled": "No se dio permiso. La grabación sigue en la carpeta Recuperadas.",
+
     "tx.sub": "Convierte un video, un audio o un link de YouTube en texto. Todo se procesa en tu PC.",
     "tx.fileTab": "Archivo de video o audio",
     "tx.urlTab": "Link de YouTube",
@@ -371,6 +380,15 @@ const I18N = {
     "live.keepHint": "Ready instantly. A little less accurate.",
     "live.redo": "Transcribe again more accurately",
     "live.redoHint": "Uses the “{model}” model. It takes longer, but the result is better.",
+
+    "blocked.title": "Windows blocked the recordings folder",
+    "blocked.allow": "Allow Transcriptor",
+    "blocked.allowHint": "Windows will ask for administrator permission. You only do this once on this PC.",
+    "blocked.other": "Use another folder",
+    "blocked.otherHint": "Save to {folder} from now on, which Windows doesn't protect.",
+    "blocked.allowed": "Done: Transcriptor can now save to your folder.",
+    "blocked.moved": "Recordings will be saved to {folder}.",
+    "blocked.canceled": "Permission wasn't given. The recording is still in the Recuperadas folder.",
 
     "tx.sub": "Turn a video, an audio file or a YouTube link into text. Everything is processed on your PC.",
     "tx.fileTab": "Video or audio file",

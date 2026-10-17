@@ -151,6 +151,44 @@ def send_to_recycle_bin(paths):
     return ctypes.windll.shell32.SHFileOperationW(ctypes.byref(op)) == 0 and not op.fAnyOperationsAborted
 
 
+# ----------------------------------------------------- ejecutar como administrador
+
+class SHELLEXECUTEINFOW(ctypes.Structure):
+    _fields_ = [("cbSize", wintypes.DWORD), ("fMask", wintypes.ULONG), ("hwnd", wintypes.HWND),
+                ("lpVerb", wintypes.LPCWSTR), ("lpFile", wintypes.LPCWSTR),
+                ("lpParameters", wintypes.LPCWSTR), ("lpDirectory", wintypes.LPCWSTR),
+                ("nShow", ctypes.c_int), ("hInstApp", wintypes.HINSTANCE), ("lpIDList", ctypes.c_void_p),
+                ("lpClass", wintypes.LPCWSTR), ("hkeyClass", wintypes.HKEY), ("dwHotKey", wintypes.DWORD),
+                ("hIconOrMonitor", wintypes.HANDLE), ("hProcess", wintypes.HANDLE)]
+
+
+_shell32 = ctypes.WinDLL("shell32", use_last_error=True)
+_shell32.ShellExecuteExW.argtypes = [ctypes.POINTER(SHELLEXECUTEINFOW)]
+kernel32.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+kernel32.GetExitCodeProcess.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD)]
+kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+ERROR_CANCELLED = 1223  # el usuario dijo "No" en la ventana de Control de cuentas de usuario
+
+
+def run_elevated(exe, params, timeout_ms=120_000):
+    """Ejecuta un programa como administrador: Windows muestra su ventana de permiso (UAC).
+    Devuelve el código de salida, o None si el usuario no dio permiso."""
+    info = SHELLEXECUTEINFOW(cbSize=ctypes.sizeof(SHELLEXECUTEINFOW),
+                             fMask=0x40 | 0x100,  # NOCLOSEPROCESS | NOASYNC
+                             lpVerb="runas", lpFile=str(exe), lpParameters=params, nShow=0)  # SW_HIDE
+    if not _shell32.ShellExecuteExW(ctypes.byref(info)):
+        if ctypes.get_last_error() == ERROR_CANCELLED:
+            return None
+        raise ctypes.WinError(ctypes.get_last_error())
+    try:
+        kernel32.WaitForSingleObject(info.hProcess, timeout_ms)
+        code = wintypes.DWORD()
+        kernel32.GetExitCodeProcess(info.hProcess, ctypes.byref(code))
+        return code.value
+    finally:
+        kernel32.CloseHandle(info.hProcess)
+
+
 # --------------------------------------------------------------- portapapeles
 
 kernel32.GlobalAlloc.restype = wintypes.HGLOBAL

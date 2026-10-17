@@ -188,7 +188,92 @@ def test_blocked_output_folder_keeps_recording_in_rescue_folder(finished_recordi
     result = rec.stop()
     rec.cleanup()  # el motor borra la carpeta temporal: la grabación no debe estar ahí
     assert result.parent == rescue and result.read_bytes() == b"mp4-final"
-    assert any(str(rescue) in e for e in rec.errors)
+    assert rec.blocked["files"] == [result] and "Acceso denegado" in rec.blocked["error"]
+
+
+def test_output_folder_that_cannot_be_created_still_rescues(finished_recording, monkeypatch, tmp_path):
+    rec, out = finished_recording
+    rescue = tmp_path / "Recuperadas"
+    monkeypatch.setattr(core, "RESCUE_DIR", rescue)
+    real_mkdir = Path.mkdir
+
+    def guarded_mkdir(self, *a, **kw):
+        if self == out:
+            raise FileNotFoundError(2, "El sistema no puede encontrar el archivo especificado")
+        return real_mkdir(self, *a, **kw)
+
+    def fake_ffmpeg(cmd, **_kw):
+        with open(cmd[-1], "wb") as f:
+            f.write(b"mp4-final")
+        return SimpleNamespace(returncode=0, stderr=b"")
+
+    monkeypatch.setattr(core.subprocess, "run", fake_ffmpeg)
+    monkeypatch.setattr(Path, "mkdir", guarded_mkdir)
+    result = rec.stop()
+    rec.cleanup()
+    assert result.parent == rescue and result.read_bytes() == b"mp4-final"
+    assert rec.blocked["files"] == [result]
+
+
+# ------------------------------------- carpeta bloqueada: permitir la app o usar otra carpeta
+
+
+@pytest.fixture
+def blocked_app(tmp_path, monkeypatch):
+    """App con una grabación rescatada en Recuperadas y la carpeta de grabaciones bloqueada."""
+    rescue, folder, unprotected = tmp_path / "Recuperadas", tmp_path / "Documentos", tmp_path / "Libre"
+    rescue.mkdir()
+    monkeypatch.setattr(app, "RESCUE_DIR", rescue)
+    monkeypatch.setattr(app, "UNPROTECTED_DIR", unprotected)
+    monkeypatch.setattr(app, "CONFIG_FILE", tmp_path / "config.json")
+    a = app.App()
+    a.cfg["outputDir"] = str(folder)
+    a.engine = SimpleNamespace(send=lambda msg: sent.append(msg))
+    a.js = lambda *_a: None
+    sent = []
+    video = rescue / "Grabación 1.mp4"
+    video.write_bytes(b"mp4")
+    a.on_event({"type": "folder_blocked", "files": [str(video), str(tmp_path / "otro" / "x.mp4")]})
+    return SimpleNamespace(app=a, api=app.Api(a), video=video, folder=folder, unprotected=unprotected,
+                           sent=sent)
+
+
+def test_only_rescue_folder_files_are_accepted(blocked_app):
+    assert blocked_app.app.rescued == [blocked_app.video]   # la ruta de otra carpeta se ignora
+
+
+def test_allow_app_runs_elevated_and_moves_recording(blocked_app, monkeypatch):
+    calls = []
+    monkeypatch.setattr(app.winutil, "run_elevated", lambda exe, params: calls.append((exe, params)) or 0)
+    r = blocked_app.api.allow_folder_access()
+    target = blocked_app.folder / blocked_app.video.name
+    assert r == {"path": str(target)} and target.read_bytes() == b"mp4"
+    exe, params = calls[0]
+    assert exe == app.POWERSHELL and "Add-MpPreference -ControlledFolderAccessAllowedApplications" in params
+    assert {"cmd": "live_moved", "old": str(blocked_app.video), "new": str(target)} in blocked_app.sent
+
+
+def test_declined_admin_prompt_leaves_recording_in_rescue(blocked_app, monkeypatch):
+    monkeypatch.setattr(app.winutil, "run_elevated", lambda *_a: None)   # el usuario dijo "No"
+    assert blocked_app.api.allow_folder_access() == {"canceled": True}
+    assert blocked_app.video.exists() and blocked_app.app.rescued == [blocked_app.video]
+
+
+def test_use_unprotected_folder_moves_recording_and_saves_setting(blocked_app):
+    r = blocked_app.api.use_unprotected_folder()
+    target = blocked_app.unprotected / blocked_app.video.name
+    assert r == {"path": str(target), "folder": str(blocked_app.unprotected)}
+    assert target.read_bytes() == b"mp4" and not blocked_app.video.exists()
+    assert blocked_app.app.cfg["outputDir"] == str(blocked_app.unprotected)
+
+
+def test_move_never_overwrites_an_existing_recording(blocked_app):
+    blocked_app.unprotected.mkdir()
+    (blocked_app.unprotected / blocked_app.video.name).write_bytes(b"otra")
+    r = blocked_app.api.use_unprotected_folder()
+    assert "error" in r and blocked_app.video.exists()
+    assert (blocked_app.unprotected / blocked_app.video.name).read_bytes() == b"otra"
+    assert blocked_app.app.cfg["outputDir"] == str(blocked_app.folder)   # no cambió la carpeta
 
 
 # --------------------------------------------------- borde amarillo de la captura de Windows

@@ -86,6 +86,8 @@ const store = createStore({
   // Transcripción de una grabación pedida desde su ficha. Vive fuera de `det` para que siga
   // (y se vea su avance) aunque el usuario cambie de pantalla o abra otra grabación.
   recTx: null,  // { job, path, phase: "running", status, pct, lines }
+  // Windows bloqueó la carpeta y la grabación quedó en Recuperadas: { message, unprotected }.
+  blocked: null,
   history: { folder: "", items: [], page: 1 },
   version: "",
   enginePath: "",
@@ -742,6 +744,41 @@ function detailsRenamed(path) {
   patch("det", { path, txt: d.txt ? withExt(path, ".txt") : null });
 }
 
+/** Grabación guardada: primero el nombre; después la transcripción (así el .txt queda con el nombre elegido). */
+function recordingSaved(ev, segments) {
+  openDetails(ev.path, { justRecorded: true, info: ev })
+    .then(() => askRecordingName(ev.path))
+    .then((path) => {
+      if (path !== ev.path) detailsRenamed(path);
+      afterRecording({ ...ev, path }, segments);
+    });
+}
+
+/** Windows no dejó guardar en la carpeta (acceso controlado a carpetas). Ofrece permitir la app o
+ *  usar una carpeta que Windows no protege. Resuelve con la nueva ruta de la grabación cuando se
+ *  movió; si el usuario cierra el diálogo, la grabación se queda en Recuperadas. */
+function askBlockedFolder(blocked) {
+  return new Promise((resolve) => {
+    const done = (r, okText) => {
+      if (r.canceled || r.error) {
+        toast(r.error || t("blocked.canceled"), G.warn);
+        ask();  // se puede probar la otra opción
+        return;
+      }
+      if (r.folder) patch("config", { outputDir: r.folder });
+      toast(okText(r), G.check);
+      resolve(r.path);
+    };
+    const ask = () => showDialog(t("blocked.title"), blocked.message, [
+      { icon: G.check, title: t("blocked.allow"), text: t("blocked.allowHint"),
+        run: async () => done(await api.allow_folder_access(), () => t("blocked.allowed")) },
+      { icon: G.folder, title: t("blocked.other"), text: t("blocked.otherHint", { folder: blocked.unprotected }),
+        run: async () => done(await api.use_unprotected_folder(), (r) => t("blocked.moved", { folder: r.folder })) },
+    ]);
+    ask();
+  });
+}
+
 /** Al terminar de grabar: qué hacer con la transcripción en vivo. */
 function afterRecording(ev, segments) {
   if (ev.live_segments > 0 && segments.length) {
@@ -837,16 +874,17 @@ window.onEngine = (ev) => {
     case "live_segment":
       patch("rec", { segments: [...rec.segments, { start: ev.start, end: ev.end, text: ev.text }] });
       break;
+    case "folder_blocked": store.set({ blocked: ev }); break;
     case "rec_saved": {
-      const segments = rec.segments;
-      store.set({ rec: { ...REC_IDLE } });
-      // Primero el nombre; después la transcripción (así el .txt queda con el nombre elegido).
-      openDetails(ev.path, { justRecorded: true, info: ev })
-        .then(() => askRecordingName(ev.path))
-        .then((path) => {
-          if (path !== ev.path) detailsRenamed(path);
-          afterRecording({ ...ev, path }, segments);
-        });
+      const segments = rec.segments, blocked = S().blocked;
+      store.set({ rec: { ...REC_IDLE }, blocked: null });
+      if (blocked) {
+        // Quedó en Recuperadas: primero resolver dónde guardarla; después, lo de siempre.
+        go("home");
+        askBlockedFolder(blocked).then((path) => recordingSaved({ ...ev, path }, segments));
+      } else {
+        recordingSaved(ev, segments);
+      }
       break;
     }
     case "rec_discarded":
