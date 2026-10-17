@@ -220,6 +220,36 @@ def test_capture_retries_with_border_when_windows_cannot_hide_it(monkeypatch):
     assert attempts == [None]
 
 
+def test_capture_retries_without_update_interval_on_windows_10(monkeypatch):
+    attempts = []
+
+    class FakeCapture:
+        def __init__(self, draw_border=None, **kw):
+            self.draw_border, self.kw = draw_border, kw
+            attempts.append((draw_border, "minimum_update_interval" in kw))
+
+        def event(self, fn):
+            return fn
+
+        def start_free_threaded(self):
+            if self.draw_border is False:
+                raise RuntimeError("Graphics capture error: Toggling the capture border is not supported")
+            if "minimum_update_interval" in self.kw:
+                raise RuntimeError("Graphics capture error: Setting a minimum update interval is not "
+                                   "supported by the Graphics Capture API on this platform.")
+            return "control"
+
+    monkeypatch.setattr(core, "WindowsCapture", FakeCapture)
+    monkeypatch.setitem(core._BORDER, "can_hide", True)
+    monkeypatch.setitem(core._UPDATE_INTERVAL, "supported", True)
+    source = {"kind": "monitor", "index": 0}
+    assert core.start_capture(source, lambda *_: None, lambda: None, minimum_update_interval=66) == "control"
+    assert attempts == [(False, True), (None, True), (None, False)]
+    attempts.clear()
+    core.start_capture(source, lambda *_: None, lambda: None, minimum_update_interval=66)  # ya aprendió
+    assert attempts == [(None, False)]
+
+
 def test_other_capture_errors_are_not_hidden(monkeypatch):
     class BrokenCapture:
         def __init__(self, **_kw):

@@ -267,21 +267,33 @@ def _wgc_kwargs(source):
 # Se intenta ocultarlo y, si Windows no lo permite, se graba con el borde (y se recuerda para la próxima).
 _BORDER = {"can_hide": True}
 
+# Limitar cada cuánto llegan cuadros (minimum_update_interval) tampoco existe en Windows 10: ahí fallaba
+# con "Setting a minimum update interval is not supported". Sin el límite llegan más cuadros, pero
+# ScreenCapture igual escribe el video a ritmo constante, así que solo se pierde un poco de eficiencia.
+_UPDATE_INTERVAL = {"supported": True}
+
 
 def start_capture(source, on_frame_arrived, on_closed, **options):
     """Arranca Windows Graphics Capture en su propio hilo. Devuelve el control para detenerla."""
-    for draw_border in ((False, None) if _BORDER["can_hide"] else (None,)):
-        cap = WindowsCapture(draw_border=draw_border, **options, **_wgc_kwargs(source))
+    while True:  # cada reintento desactiva una opción que Windows no admite, así que termina
+        draw_border = False if _BORDER["can_hide"] else None
+        kwargs = dict(options)
+        if not _UPDATE_INTERVAL["supported"]:
+            kwargs.pop("minimum_update_interval", None)
+        cap = WindowsCapture(draw_border=draw_border, **kwargs, **_wgc_kwargs(source))
         cap.event(on_frame_arrived)  # la librería reconoce los avisos por el nombre de la función
         cap.event(on_closed)
         try:
             return cap.start_free_threaded()
         except Exception as e:
-            if draw_border is False and "border" in str(e).lower():
+            msg = str(e).lower()
+            if draw_border is False and "border" in msg:
                 _BORDER["can_hide"] = False
                 continue
+            if "minimum_update_interval" in kwargs and "update interval" in msg:
+                _UPDATE_INTERVAL["supported"] = False
+                continue
             raise
-    raise RuntimeError("Windows Graphics Capture no arrancó")  # no se llega: el último intento lanza
 
 
 def grab_frame(source, timeout=2.0):
