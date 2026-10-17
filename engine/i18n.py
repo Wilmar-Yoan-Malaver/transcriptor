@@ -32,6 +32,9 @@ MESSAGES = {
         "rec.merge_failed": "No se pudo unir el video y el audio{detail}. "
                             "Se guardaron por separado para no perder la grabación.",
         "rec.merge_timeout": "ffmpeg no terminó en {minutes} min",
+        "rec.folder_blocked": "Windows no dejó guardar en {folder} ({error}). La grabación quedó en {path}. "
+                              "Si tienes activado el acceso controlado a carpetas, permite Transcriptor en "
+                              "Seguridad de Windows › Protección contra ransomware.",
         "rec.file_name": "Grabación {stamp}",
         "rec.screen_label": "Pantalla {n}  ({w}×{h})",
         "rec.screen_primary": "  · principal",
@@ -90,6 +93,10 @@ MESSAGES = {
         "rec.merge_failed": "Couldn't merge the video and audio{detail}. "
                             "They were saved separately so the recording isn't lost.",
         "rec.merge_timeout": "ffmpeg didn't finish within {minutes} min",
+        "rec.folder_blocked": "Windows didn't allow saving to {folder} ({error}). "
+                              "The recording was saved to {path}. "
+                              "If Controlled folder access is on, allow Transcriptor in "
+                              "Windows Security › Ransomware protection.",
         "rec.file_name": "Recording {stamp}",
         "rec.screen_label": "Screen {n}  ({w}×{h})",
         "rec.screen_primary": "  · primary",

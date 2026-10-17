@@ -1,6 +1,7 @@
 """Pruebas de integridad de datos: que nunca se pierda ni se corte una grabación o transcripción."""
 
 import json
+from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
@@ -143,3 +144,93 @@ def test_stuck_merge_is_cut_and_recording_rescued(finished_recording, monkeypatc
 def test_run_ffmpeg_real_binary_ignores_stdin():
     r = core.run_ffmpeg(["-version"], timeout=30)
     assert r.returncode == 0 and b"ffmpeg version" in r.stdout
+
+
+# ------------------------------------------- acceso controlado a carpetas (Windows Defender)
+
+
+def test_ffmpeg_writes_merge_to_temp_folder_not_documents(finished_recording, monkeypatch):
+    """Defender bloquea a ffmpeg si escribe en Documentos: escribe en la carpeta temporal."""
+    rec, out = finished_recording
+    targets = []
+
+    def fake_ffmpeg(cmd, **_kw):
+        targets.append(cmd[-1])
+        with open(cmd[-1], "wb") as f:
+            f.write(b"mp4-final")
+        return SimpleNamespace(returncode=0, stderr=b"")
+
+    monkeypatch.setattr(core.subprocess, "run", fake_ffmpeg)
+    result = rec.stop()
+    assert targets[-1].startswith(str(rec.tmp))
+    assert result.parent == out and result.read_bytes() == b"mp4-final"
+
+
+def test_blocked_output_folder_keeps_recording_in_rescue_folder(finished_recording, monkeypatch, tmp_path):
+    rec, out = finished_recording
+    rescue = tmp_path / "Recuperadas"
+    monkeypatch.setattr(core, "RESCUE_DIR", rescue)
+
+    def fake_ffmpeg(cmd, **_kw):
+        with open(cmd[-1], "wb") as f:
+            f.write(b"mp4-final")
+        return SimpleNamespace(returncode=0, stderr=b"")
+
+    real_move = core.shutil.move
+
+    def guarded_move(src, dst):
+        if Path(dst).parent == out:
+            raise PermissionError(13, "Acceso denegado")  # como el acceso controlado a carpetas
+        return real_move(src, dst)
+
+    monkeypatch.setattr(core.subprocess, "run", fake_ffmpeg)
+    monkeypatch.setattr(core.shutil, "move", guarded_move)
+    result = rec.stop()
+    rec.cleanup()  # el motor borra la carpeta temporal: la grabación no debe estar ahí
+    assert result.parent == rescue and result.read_bytes() == b"mp4-final"
+    assert any(str(rescue) in e for e in rec.errors)
+
+
+# --------------------------------------------------- borde amarillo de la captura de Windows
+
+
+def test_capture_retries_with_border_when_windows_cannot_hide_it(monkeypatch):
+    attempts = []
+
+    class FakeCapture:
+        def __init__(self, draw_border=None, **_kw):
+            self.draw_border = draw_border
+            attempts.append(draw_border)
+
+        def event(self, fn):
+            return fn
+
+        def start_free_threaded(self):
+            if self.draw_border is False:
+                raise RuntimeError("Graphics capture error: Toggling the capture border is not supported")
+            return "control"
+
+    monkeypatch.setattr(core, "WindowsCapture", FakeCapture)
+    monkeypatch.setitem(core._BORDER, "can_hide", True)
+    source = {"kind": "monitor", "index": 0}
+    assert core.start_capture(source, lambda *_: None, lambda: None) == "control"
+    assert attempts == [False, None]
+    attempts.clear()
+    core.start_capture(source, lambda *_: None, lambda: None)  # ya aprendió: no reintenta
+    assert attempts == [None]
+
+
+def test_other_capture_errors_are_not_hidden(monkeypatch):
+    class BrokenCapture:
+        def __init__(self, **_kw):
+            pass
+
+        def event(self, fn):
+            return fn
+
+        def start_free_threaded(self):
+            raise RuntimeError("Graphics capture error: la ventana ya no existe")
+
+    monkeypatch.setattr(core, "WindowsCapture", BrokenCapture)
+    with pytest.raises(RuntimeError, match="ventana"):
+        core.start_capture({"kind": "monitor", "index": 0}, lambda *_: None, lambda: None)
