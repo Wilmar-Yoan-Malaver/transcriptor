@@ -18,11 +18,32 @@ En [Releases](https://github.com/Wilmar-Yoan-Malaver/transcriptor/releases):
 - **`Transcriptor-X.Y.Z.msi` (instalador):** instala la app en *Archivos de programa*, con accesos directos en el
   menú Inicio y el Escritorio. Se desinstala desde *Configuración › Aplicaciones*; tus grabaciones
   (Documentos\Transcripciones) y tu configuración se conservan. Una versión nueva se instala encima.
+  El instalador también agrega Transcriptor a las aplicaciones permitidas del
+  [acceso controlado a carpetas](#acceso-controlado-a-carpetas) y lo quita al desinstalar.
 - **`Transcriptor-portable.zip`:** no se instala. Descomprimir y abrir `Transcriptor.cmd`.
 
 Cada archivo trae su `.sha256` para comprobar que llegó completo: `Get-FileHash <archivo>` en PowerShell.
 
 Requisitos: Windows 10 u 11 de 64 bits.
+
+### Acceso controlado a carpetas
+
+La protección contra ransomware de Windows (*Seguridad de Windows › Protección antivirus y contra
+amenazas › Protección contra ransomware*) bloquea que programas desconocidos escriban en Documentos,
+Escritorio, Imágenes, etc. Si está activada, Windows no deja guardar las grabaciones.
+
+- **Instalador MSI:** al instalar agrega a las aplicaciones permitidas los dos programas de la app,
+  `C:\Program Files\Transcriptor\python\pythonw.exe` (ventana) y `python.exe` (motor), solo con esa
+  ruta exacta. Al desinstalar los quita. Si el PC usa otro antivirus en vez de Defender, este paso se
+  omite y la instalación sigue normal.
+- **Si Windows bloquea la carpeta igual** (versión portable, otro antivirus o el permiso se quitó):
+  la grabación no se pierde, queda en `%LOCALAPPDATA%\Transcriptor\Recuperadas` y la app ofrece
+  *Permitir Transcriptor* (pide permiso de administrador) o *Usar otra carpeta*
+  (`%USERPROFILE%\Transcripciones`, que Windows no protege).
+
+*The MSI adds Transcriptor's two executables (by exact path) to Controlled folder access's allowed apps
+and removes them on uninstall. If Windows still blocks the folder, the recording is kept and the app
+offers to allow it (asks for admin permission) or to switch to an unprotected folder.*
 
 ## Estructura
 
