@@ -6,59 +6,88 @@
 <style>
   :root { --rec: #EF4444; --warning: #F59E0B; --primary: #3B82F6; --success: #22C55E; --text-2: #8B949E; }
   html, body { margin: 0; height: 100%; background: #161B22; color: #E6EDF3; overflow: hidden; user-select: none; }
-  body {
-    font: 13.5px "Segoe UI Variable Text", "Segoe UI", sans-serif; display: flex; align-items: center;
-    padding: 0 8px 0 18px; gap: 4px; box-sizing: border-box; cursor: grab;
-  }
+  body { font: 13.5px "Segoe UI Variable Text", "Segoe UI", sans-serif; cursor: grab; }
   body.dragging { cursor: grabbing; }
+  /* La ventana mide lo mismo que #bar: Python la ajusta a su ancho (ver fit()). */
+  #bar { display: inline-flex; align-items: center; height: 46px; padding: 0 6px 0 14px; gap: 2px; box-sizing: border-box; }
   .ic, button { font-family: "Segoe Fluent Icons", "Segoe MDL2 Assets"; font-style: normal; }
-  .dot { width: 14px; height: 14px; border-radius: 50%; background: var(--rec); animation: blink 1.6s infinite; flex: none; }
+  .dot { width: 12px; height: 12px; border-radius: 50%; background: var(--rec); animation: blink 1.6s infinite; flex: none; }
   body.paused .dot { background: var(--warning); animation: none; }
   body.saving .dot { background: var(--primary); animation: none; }
-  .time { font: 600 16px "Segoe UI Variable Display", "Segoe UI"; font-variant-numeric: tabular-nums; min-width: 64px; margin: 0 6px 0 10px; }
-  button { border: 0; background: transparent; color: inherit; border-radius: 8px; padding: 9px; font-size: 15px; cursor: pointer; line-height: 1; }
+  .time { font: 600 15px "Segoe UI Variable Display", "Segoe UI"; font-variant-numeric: tabular-nums; margin: 0 6px 0 8px; }
+  button { border: 0; background: transparent; color: inherit; border-radius: 7px; padding: 8px; font-size: 14px; cursor: pointer; line-height: 1; }
   button:hover { background: #21262D; }
   /* Interruptores de audio: clic para silenciar o activar */
-  .meter { width: 40px; padding: 6px 0 5px; display: flex; flex-direction: column; align-items: center; gap: 5px; position: relative; }
-  .meter .ic { font-size: 16px; }
-  .meter .bar { width: 22px; height: 3px; border-radius: 2px; background: #30363D; overflow: hidden; }
+  .meter { width: 34px; padding: 5px 0 4px; display: flex; flex-direction: column; align-items: center; gap: 4px; position: relative; }
+  .meter .ic { font-size: 15px; }
+  .meter .bar { width: 20px; height: 3px; border-radius: 2px; background: #30363D; overflow: hidden; }
   .meter .bar i { display: block; height: 100%; width: 0; background: var(--success); }
   .meter.off { color: var(--text-2); }
   .meter.off::after {  /* tachado diagonal sobre el icono */
-    content: ""; position: absolute; top: 5px; left: 50%; width: 2px; height: 20px; margin-left: -1px;
+    content: ""; position: absolute; top: 4px; left: 50%; width: 2px; height: 18px; margin-left: -1px;
     background: var(--rec); transform: rotate(-45deg); border-radius: 1px;
   }
   .meter.off .bar { visibility: hidden; }
-  .sep { width: 1px; height: 24px; background: #3A414B; margin: 0 6px; flex: none; }
-  .stop i { display: block; width: 15px; height: 15px; border-radius: 3px; background: #fff; }
-  .saving-text { color: var(--text-2); margin-left: 6px; font-family: inherit; }
+  .sep { width: 1px; height: 20px; background: #3A414B; margin: 0 4px; flex: none; }
+  .stop i { display: block; width: 13px; height: 13px; border-radius: 3px; background: #fff; }
+  .saving-text { color: var(--text-2); margin: 0 8px 0 2px; font-family: inherit; white-space: nowrap; }
+  .grip { color: #4A525D; font-size: 12px; margin: 0 2px 0 4px; }
+  /* Compacta: solo grabación, tiempo, pausa y detener. Al pasar el mouse se ve completa. */
   body.compact .full, body.saving .controls { display: none !important; }
   body:not(.saving) .saving-text { display: none; }
-  .grip { color: #4A525D; font-size: 12px; margin-left: 2px; }
   @keyframes blink { 50% { opacity: .25; } }
 </style>
 </head>
-<body title="Arrastra para mover" data-i18n-title="bar.drag">
+<body class="compact" title="Arrastra para mover" data-i18n-title="bar.drag">
+<div id="bar">
   <span class="dot"></span>
   <span class="time" id="time">00:00</span>
   <button class="meter full" id="mic"><i class="ic">&#xE720;</i><div class="bar"><i></i></div></button>
   <button class="meter full" id="sys"><i class="ic">&#xE767;</i><div class="bar"><i></i></div></button>
   <span class="sep full"></span>
   <span class="controls" style="display:flex; align-items:center; gap:2px">
-    <button class="full" id="pause" title="Pausar" data-i18n-title="live.pause">&#xE769;</button>
+    <button id="pause" title="Pausar" data-i18n-title="live.pause">&#xE769;</button>
     <button class="stop" id="stop" title="Detener y guardar" data-i18n-title="live.stop"><i></i></button>
     <span class="sep full"></span>
-    <button id="compact" title="Modo compacto" data-i18n-title="bar.compact" style="font-size:12px">&#xE921;</button>
     <button class="full" id="cancel" title="Descartar grabación" data-i18n-title="live.discard" style="font-size:12px">&#xE711;</button>
   </span>
   <span class="saving-text" data-i18n="live.saving">Guardando…</span>
-  <i class="ic grip" title="Arrastra para mover" data-i18n-title="bar.drag">&#xE76F;</i>
+  <i class="ic grip full" title="Arrastra para mover" data-i18n-title="bar.drag">&#xE76F;</i>
+</div>
 <script src="i18n.js"></script>
 <script>
   const $ = (s) => document.querySelector(s);
   const fmt = (s) => { s = Math.floor(s); const m = Math.floor(s / 60), h = Math.floor(m / 60), p = (n) => String(n).padStart(2, "0");
                        return h ? `${h}:${p(m % 60)}:${p(s % 60)}` : `${p(m)}:${p(s % 60)}`; };
-  let compact = false, paused = false, audio = {};
+  const COLLAPSE_DELAY = 700;  // ms sin el mouse encima antes de volver a la vista compacta
+  let paused = false, audio = {}, collapseTimer = null, lastSize = "";
+
+  /** Ajusta la ventana al ancho del contenido (px físicos: así lo entiende Windows).
+   *  Medir con getBoundingClientRect ya obliga al navegador a calcular el diseño nuevo. */
+  function fit() {
+    const r = $("#bar").getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+    const w = Math.ceil(r.width * dpr), h = Math.ceil(r.height * dpr);
+    const expanded = !document.body.classList.contains("compact");
+    const size = `${w}x${h}:${expanded}`;
+    if (size === lastSize || !window.pywebview) return;
+    lastSize = size;
+    pywebview.api.fit(w, h, expanded);
+  }
+
+  function setCompact(on) {
+    clearTimeout(collapseTimer);
+    if (document.body.classList.contains("compact") === on) return;
+    document.body.classList.toggle("compact", on);
+    fit();
+  }
+
+  // Vista completa mientras el mouse está encima; compacta un momento después de salir.
+  document.addEventListener("mouseenter", () => setCompact(false));
+  document.addEventListener("mouseleave", () => {
+    if (document.body.classList.contains("dragging")) return;
+    clearTimeout(collapseTimer);
+    collapseTimer = setTimeout(() => setCompact(true), COLLAPSE_DELAY);
+  });
 
   /** Estado de cada fuente: encendida/apagada (clic para cambiar). */
   window.setAudio = (a) => {
@@ -76,13 +105,14 @@
     setLang(lang);
     window.setAudio(audio);
     window.setPaused(paused);
-    $("#compact").title = t(compact ? "bar.expand" : "bar.compact");
+    fit();
   };
   window.init = (f) => { window.setAudio(f); window.applyLang(f.lang); };
   window.update = (ev) => {
     $("#time").textContent = fmt(ev.elapsed);
     $("#mic .bar i").style.width = `${Math.max(0, ev.mic) * 100}%`;
     $("#sys .bar i").style.width = `${Math.max(0, ev.sys) * 100}%`;
+    fit();  // al pasar de 59:59 a 1:00:00 el tiempo ocupa más
   };
   window.setPaused = (p) => {
     paused = p;
@@ -90,20 +120,13 @@
     $("#pause").textContent = p ? "" : "";
     $("#pause").title = t(p ? "live.resume" : "live.pause");
   };
-  window.setSaving = () => document.body.classList.add("saving");
+  window.setSaving = () => { document.body.classList.add("saving"); fit(); };
 
   $("#mic").onclick = () => pywebview.api.toggle_audio("mic");
   $("#sys").onclick = () => pywebview.api.toggle_audio("sys");
   $("#pause").onclick = () => pywebview.api.pause();
   $("#stop").onclick = () => pywebview.api.stop();
   $("#cancel").onclick = () => pywebview.api.cancel();
-  $("#compact").onclick = () => {
-    compact = !compact;
-    document.body.classList.toggle("compact", compact);
-    $("#compact").textContent = compact ? "" : "";
-    $("#compact").title = t(compact ? "bar.expand" : "bar.compact");
-    pywebview.api.compact(compact);
-  };
   $(".time").ondblclick = () => pywebview.api.show_app();
 
   // Arrastrar: desde cualquier parte que no sea un botón. Python mueve la ventana
@@ -113,8 +136,12 @@
     e.preventDefault();
     document.body.classList.add("dragging");
     try { await pywebview.api.begin_drag(); }
-    finally { document.body.classList.remove("dragging"); }
+    finally {
+      document.body.classList.remove("dragging");
+      if (!document.body.matches(":hover")) setCompact(true);
+    }
   });
+  window.addEventListener("pywebviewready", fit);
 </script>
 </body>
 </html>

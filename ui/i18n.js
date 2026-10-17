@@ -294,8 +294,6 @@ const I18N = {
     "fps.30": "30 (recomendado)",
 
     "bar.drag": "Arrastra para mover",
-    "bar.compact": "Modo compacto",
-    "bar.expand": "Mostrar todo",
     "bar.audio": "{label}: {state} · {action}",
   },
 
@@ -578,8 +576,6 @@ const I18N = {
     "fps.30": "30 (recommended)",
 
     "bar.drag": "Drag to move",
-    "bar.compact": "Compact mode",
-    "bar.expand": "Show all",
     "bar.audio": "{label}: {state} · {action}",
   },
 };
