@@ -37,7 +37,9 @@ VERSION = "2.1.1"
 
 TITLE = "Transcriptor"
 BAR_TITLE = "Transcriptor · grabando"
-BAR_SIZE, BAR_COMPACT = (500, 62), (250, 62)
+# Tamaño inicial de la barra flotante; después se ajusta sola a su contenido (BarApi.fit).
+BAR_SIZE = (220, 46)
+BAR_MAX_PX = 1600  # tope de ancho/alto que acepta fit(), en px físicos
 NO_WINDOW, BELOW_NORMAL = 0x08000000, 0x00004000
 MEDIA_EXT = {".mp4", ".mkv", ".mov", ".webm", ".avi", ".mp3", ".m4a", ".wav"}
 
@@ -201,6 +203,7 @@ class App:
         self.rec_source = None
         self.rec_flags = {}
         self.closing = False
+        self.bar_home = None        # x de la barra compacta, si se corrió para desplegarse completa
         self.status = tr("engine.starting")
         self.monitors, self.devices = [], {}
 
@@ -325,11 +328,30 @@ class App:
             winutil.move_topmost(h, left + x - sx, top + y - sy)
             time.sleep(0.008)
         if self.bar is bar:
+            self.bar_home = None  # la dejó donde quiere: ese es su nuevo lugar
             self.cfg["barPos"] = list(winutil.outer_rect(h)[:2])
             self.cfg.save()
 
+    def fit_bar(self, width, height, expanded):
+        """Ajusta la barra al tamaño de su contenido (px físicos). Si al desplegarse no cabe a la
+        derecha de la pantalla, se corre a la izquierda; al compactarse vuelve a su lugar."""
+        bar = self.bar
+        if not bar:
+            return
+        h = winutil.hwnd_of(bar)
+        left, top, right, bottom = winutil.outer_rect(h)
+        if expanded:
+            self.bar_home = left if self.bar_home is None else self.bar_home
+            area = winutil.work_area_for((left, top, right, bottom))
+            x = max(area[0], min(self.bar_home, area[2] - width))
+        else:
+            x = left if self.bar_home is None else self.bar_home
+            self.bar_home = None
+        winutil.move_topmost(h, x, top, width, height)
+
     def _on_rec_started(self, ev):
         self.rec_state = "recording"
+        self.bar_home = None
         self.rec_flags.update(ev.get("audio", {}))
         src = self.rec_source
         if src and src["kind"] == "monitor":
@@ -452,10 +474,13 @@ class BarApi:
                 tr("rec.discard_title"), tr("rec.discard_text")):
             app.stop_recording(discard=True)
 
-    def compact(self, on):
-        w, h = BAR_COMPACT if on else BAR_SIZE
-        if self._app.bar:
-            self._app.bar.resize(w, h)
+    def fit(self, width, height, expanded):
+        """La barra pide su tamaño (px físicos): compacta o completa al pasar el mouse."""
+        if not all(type(v) is int and 0 < v <= BAR_MAX_PX for v in (width, height)):
+            log.warning("Tamaño de barra rechazado: %r x %r", width, height)
+            return False
+        self._app.fit_bar(width, height, bool(expanded))
+        return True
 
     def show_app(self):
         self._app.main.restore()
