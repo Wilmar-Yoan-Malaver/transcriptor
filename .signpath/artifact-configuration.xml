@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Configuración de artefacto para SignPath (se pega en signpath.io › proyecto › Artifact configurations).
+  Se guarda aquí para que quede versionada junto al código.
+
+  El workflow .github/workflows/release.yml sube el MSI como artefacto de GitHub (un .zip que lo
+  contiene). Se firma solo el MSI. Restricciones de metadatos (requisito de SignPath Foundation):
+  en un MSI se verifican "subject" y "author" del resumen del paquete, que installer/Transcriptor.wxs
+  fija en "Transcriptor" y en el autor. Referencia: https://docs.signpath.io/artifact-configuration/reference
+-->
+<artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
+  <zip-file>
+    <msi-file path="Transcriptor-*.msi" subject="Transcriptor" author="Wilmar Yoan Malaver">
+      <authenticode-sign />
+    </msi-file>
+  </zip-file>
+</artifact-configuration>
