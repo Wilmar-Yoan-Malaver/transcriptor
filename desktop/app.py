@@ -33,7 +33,7 @@ MODELS = (Path(sys.executable).parent if FROZEN else ROOT) / "models"
 DATA = Path(os.environ["APPDATA"]) / "Transcriptor"
 CONFIG_FILE = DATA / "config.json"
 ENGINE_LOG = DATA / "engine.log"
-VERSION = "2.2.1"
+VERSION = "2.3.0"
 
 TITLE = "Transcriptor"
 BAR_TITLE = "Transcriptor · grabando"
