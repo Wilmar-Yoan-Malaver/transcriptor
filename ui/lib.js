@@ -23,11 +23,11 @@ const fmtDur = (s) => {
 const fmtSize = (b) => (b >= 1 << 30 ? (b / (1 << 30)).toFixed(1) + " GB"
   : b >= 1 << 20 ? (b / (1 << 20)).toFixed(1) + " MB" : Math.round(b / 1024) + " KB");
 
-/** Fecha ISO → "08 oct 2026 · 10:02 a. m." */
-const fmtDate = (iso) => {
+/** Fecha ISO → "08 oct 2026 · 10:02 a. m." (o "Oct 08, 2026 · 10:02 AM" con locale "en-US"). */
+const fmtDate = (iso, locale = "es-CO") => {
   const d = new Date(iso);
-  const day = d.toLocaleDateString("es-CO", { day: "2-digit", month: "short", year: "numeric" }).replace(".", "");
-  return `${day} · ${d.toLocaleTimeString("es-CO", { hour: "numeric", minute: "2-digit" })}`;
+  const day = d.toLocaleDateString(locale, { day: "2-digit", month: "short", year: "numeric" }).replace(".", "");
+  return `${day} · ${d.toLocaleTimeString(locale, { hour: "numeric", minute: "2-digit" })}`;
 };
 
 // Rutas de Windows (aceptan \ y /)

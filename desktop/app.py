@@ -16,7 +16,9 @@ import winsound
 from datetime import datetime
 from pathlib import Path
 
+import i18n
 import webview
+from i18n import tr
 
 import winutil
 from overlay import BorderOverlay
@@ -44,6 +46,7 @@ TEXT_EXT = {".txt", ".srt"}
 ALLOWED_EXT = MEDIA_EXT | TEXT_EXT        # nunca .exe, .bat, .ps1, .lnk…
 MAX_TEXT_BYTES = 50 * 2**20                # transcripciones de hasta 50 MB
 MAX_NAME = 150
+MEDIA_PATTERN = "*.mp4;*.mkv;*.mov;*.avi;*.webm;*.m4a;*.mp3;*.wav;*.ogg;*.flac"
 RESERVED_NAMES = {"CON", "PRN", "AUX", "NUL", *(f"COM{i}" for i in range(1, 10)),
                   *(f"LPT{i}" for i in range(1, 10))}
 # Órdenes al motor que la interfaz usa directamente (grabar y detener van por métodos propios).
@@ -65,6 +68,8 @@ def valid_config_value(key, value):
     if key == "barPos":
         return value is None or (isinstance(value, list) and len(value) == 2
                                  and all(type(v) is int for v in value))
+    if key == "uiLanguage":
+        return value in i18n.LANGS
     if key == "outputDir":
         return isinstance(value, str) and Path(value).is_absolute()
     return type(value) is type(default)  # bool no pasa por int ni al revés
@@ -95,6 +100,7 @@ DEFAULTS = {
     "timestamps": True,
     "vad": False,
     "barPos": None,                # posición de la barra flotante [x, y]
+    "uiLanguage": None,            # idioma de la app: "es" | "en" (None = preguntar al abrirla)
 }
 
 
@@ -130,7 +136,8 @@ class Engine:
         self.stop()
         DATA.mkdir(parents=True, exist_ok=True)
         log = open(ENGINE_LOG, "w", encoding="utf-8")
-        env = {**os.environ, "PYTHONUTF8": "1", "PYTHONIOENCODING": "utf-8"}
+        env = {**os.environ, "PYTHONUTF8": "1", "PYTHONIOENCODING": "utf-8",
+               "TRANSCRIPTOR_LANG": i18n.language()}
         if MODELS.is_dir():
             env["TRANSCRIPTOR_MODELS"] = str(MODELS)
         if FROZEN:
@@ -185,6 +192,7 @@ class Engine:
 class App:
     def __init__(self):
         self.cfg = Config()
+        i18n.set_language(self.cfg["uiLanguage"])
         self.engine = Engine(self.on_event)
         self.main = None
         self.bar = None
@@ -193,7 +201,7 @@ class App:
         self.rec_source = None
         self.rec_flags = {}
         self.closing = False
-        self.status = "Iniciando motor…"
+        self.status = tr("engine.starting")
         self.monitors, self.devices = [], {}
 
     # ------------------------------------------------------------- utilidades
@@ -214,17 +222,26 @@ class App:
         except RuntimeError:
             pass
 
+    def set_language(self, lang):
+        """Idioma elegido en la app: textos de esta ventana, del motor y de la barra flotante."""
+        i18n.set_language(lang)
+        self.engine.send({"cmd": "set_language", "lang": lang})
+        self.engine.send({"cmd": "list_monitors"})  # los nombres de las pantallas también se traducen
+        self.js(self.bar, "applyLang", lang)
+        if self.engine.ready:
+            self.status = tr("engine.ready")
+
     # ------------------------------------------------------- eventos del motor
     def on_event(self, ev):
         t = ev.get("type")
         if t == "status" and not self.engine.ready:
             self.status = ev.get("text", "")
         elif t == "ready":
-            self.status = "Motor listo"
+            self.status = tr("engine.ready")
             self.engine.send({"cmd": "list_devices"})
             self.engine.send({"cmd": "list_monitors"})
         elif t == "engine_stopped":
-            self.status = "El motor se detuvo"
+            self.status = tr("engine.stopped")
         elif t == "devices":
             self.devices = ev
             if self.cfg["speaker"] not in ev["speakers"]:
@@ -265,16 +282,16 @@ class App:
     # ---------------------------------------------------------------- grabación
     def start_recording(self, source):
         if self.rec_state != "idle":
-            return {"error": "Ya hay una grabación en curso."}
+            return {"error": tr("rec.busy")}
         if not self.engine.ready:
-            return {"error": "El motor todavía se está iniciando…"}
+            return {"error": tr("rec.engine_starting")}
         c = self.cfg
         if source and source.get("kind") == "window" and not winutil.is_window(source["hwnd"]):
-            return {"error": "Esa ventana ya se cerró. Elige otra."}
+            return {"error": tr("rec.window_closed")}
         speaker_on = bool(c["speaker"]) and c["audioMode"] in ("both", "sys")
         mic_on = bool(c["mic"]) and c["audioMode"] in ("both", "mic")
         if not source and not (speaker_on or mic_on):
-            return {"error": "Con «Solo audio» elige al menos el micrófono o el audio del sistema."}
+            return {"error": tr("rec.audio_only_needs_source")}
 
         self.rec_state, self.rec_source = "starting", source
         live = bool(c["liveTranscription"])
@@ -341,7 +358,8 @@ class App:
                 winutil.move_topmost(h, area[0] + (area[2] - area[0] - (right - left)) // 2, area[1] + 8)
 
         self.bar.events.shown += setup_bar
-        self.bar.events.loaded += lambda bar=self.bar: self.js(bar, "init", self.rec_flags)
+        bar_flags = {**self.rec_flags, "lang": i18n.language()}
+        self.bar.events.loaded += lambda bar=self.bar: self.js(bar, "init", bar_flags)
 
         if self.cfg["showBorder"] and src:
             if src["kind"] == "monitor":
@@ -384,7 +402,7 @@ class App:
     def on_closing(self):
         if self.rec_state in ("recording", "paused"):
             if self.main.create_confirmation_dialog(
-                    "Transcriptor", "Hay una grabación en curso. ¿Detenerla, guardarla y salir?"):
+                    TITLE, tr("rec.confirm_quit")):
                 self.closing = True
                 self.stop_recording()
             return False
@@ -431,7 +449,7 @@ class BarApi:
     def cancel(self):
         app = self._app
         if app.bar and app.bar.create_confirmation_dialog(
-                "Descartar grabación", "¿Descartar esta grabación? No se guardará nada."):
+                tr("rec.discard_title"), tr("rec.discard_text")):
             app.stop_recording(discard=True)
 
     def compact(self, on):
@@ -459,6 +477,7 @@ class Api:
     def init(self):
         a = self._app
         return {"config": dict(a.cfg), "ready": a.engine.ready, "status": a.status,
+                "engineStopped": a.status == tr("engine.stopped"),
                 "monitors": a.monitors, "devices": a.devices, "recState": a.rec_state,
                 "version": VERSION, "engine": str(ENGINE), "python": sys.executable}
 
@@ -469,10 +488,12 @@ class Api:
             return False
         self._app.cfg[key] = value
         self._app.cfg.save()
+        if key == "uiLanguage":
+            self._app.set_language(value)
         return True
 
     def reset_config(self):
-        keep = {k: self._app.cfg[k] for k in ("speaker", "mic")}
+        keep = {k: self._app.cfg[k] for k in ("speaker", "mic", "uiLanguage")}
         self._app.cfg.clear()
         self._app.cfg.update({**DEFAULTS, **keep})
         self._app.cfg.save()
@@ -495,8 +516,8 @@ class Api:
 
     def restart_engine(self):
         if self._app.rec_state != "idle":
-            return {"error": "Termina la grabación antes de reiniciar el motor."}
-        self._app.status = "Iniciando motor…"
+            return {"error": tr("rec.finish_before_restart")}
+        self._app.status = tr("engine.starting")
         self._app.engine.start()
         return {"ok": True}
 
@@ -512,7 +533,7 @@ class Api:
 
     def cancel(self):
         if self._app.main.create_confirmation_dialog(
-                "Descartar grabación", "¿Descartar esta grabación? No se guardará nada."):
+                tr("rec.discard_title"), tr("rec.discard_text")):
             self._app.stop_recording(discard=True)
 
     # ---------------------------------------------------------- diálogos
@@ -524,8 +545,8 @@ class Api:
     def pick_media(self):
         r = self._app.main.create_file_dialog(
             webview.FileDialog.OPEN,
-            file_types=("Video o audio (*.mp4;*.mkv;*.mov;*.avi;*.webm;*.m4a;*.mp3;*.wav;*.ogg;*.flac)",
-                        "Todos los archivos (*.*)"))
+            file_types=(f"{tr('file.media_types')} ({MEDIA_PATTERN})",
+                        f"{tr('file.all_types')} (*.*)"))
         return r[0] if r else None
 
     # ------------------------------------------------------------- archivos
@@ -587,17 +608,17 @@ class Api:
     def rename(self, path, new_name):
         p = self._guard(path)
         if not p:
-            return {"error": "Solo se pueden renombrar archivos de la carpeta de grabaciones."}
+            return {"error": tr("file.rename_outside")}
         clean = "".join("_" if c in '<>:"/\\|?*' or ord(c) < 32 else c for c in str(new_name)).strip(" .")
         if not clean:
-            return {"error": "El nombre no puede quedar vacío."}
+            return {"error": tr("file.name_empty")}
         if len(clean) > MAX_NAME:
-            return {"error": f"El nombre puede tener como máximo {MAX_NAME} caracteres."}
+            return {"error": tr("file.name_too_long", max=MAX_NAME)}
         if clean.split(".")[0].upper() in RESERVED_NAMES:
-            return {"error": "Ese nombre está reservado por Windows."}
+            return {"error": tr("file.name_reserved")}
         target = p.with_name(clean + p.suffix)
         if target.exists() and not os.path.samefile(target, p):  # mismo archivo = solo cambió mayúsculas
-            return {"error": "Ya existe un archivo con ese nombre."}
+            return {"error": tr("file.name_exists")}
         try:
             p.rename(target)
             for ext in (".txt", ".srt"):  # la transcripción acompaña al video
@@ -605,7 +626,7 @@ class Api:
                 if side.exists():
                     side.rename(target.with_name(target.stem + ext))
         except OSError as e:
-            return {"error": f"No se pudo renombrar: {e}"}
+            return {"error": tr("file.rename_failed", error=e)}
         self._app.engine.send({"cmd": "live_moved", "old": str(p), "new": str(target)})
         return {"path": str(target)}
 
@@ -613,11 +634,11 @@ class Api:
         """Envía a la Papelera la grabación y su transcripción (.txt/.srt) con el mismo nombre."""
         p = self._guard(path)
         if not p:
-            return {"error": "El archivo ya no existe o no es de la carpeta de grabaciones."}
+            return {"error": tr("file.delete_outside")}
         files = [f for f in p.parent.glob(f"{glob_escape(p.stem)}.*")
                  if f.stem.lower() == p.stem.lower() and f.suffix.lower() in ALLOWED_EXT]
         if not winutil.send_to_recycle_bin(files):
-            return {"error": "No se pudo eliminar (¿está abierto en otro programa?)."}
+            return {"error": tr("file.delete_failed")}
         return {"deleted": [f.name for f in files]}
 
     def open_path(self, path):
@@ -648,7 +669,7 @@ class Api:
             f"$s=(New-Object -ComObject WScript.Shell).CreateShortcut("
             f"[Environment]::GetFolderPath('{folder}')+'\\Transcriptor.lnk');"
             f"$s.TargetPath='{q(target)}';$s.Arguments='{q(args)}';$s.WorkingDirectory='{q(ROOT)}';"
-            f"$s.IconLocation='{q(UI / 'icon.ico')},0';$s.Description='Graba, transcribe y comparte';"
+            f"$s.IconLocation='{q(UI / 'icon.ico')},0';$s.Description='{q(tr('app.shortcut_description'))}';"
             f"$s.Save();"
             for folder in ("Desktop", "Programs"))
         r = subprocess.run([str(POWERSHELL), "-NoProfile", "-Command", script],

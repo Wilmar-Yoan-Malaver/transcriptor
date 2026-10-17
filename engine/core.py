@@ -31,6 +31,7 @@ except Exception:
 import imageio_ffmpeg
 import soundcard as sc
 from faster_whisper import WhisperModel
+from i18n import tr
 from windows_capture import WindowsCapture
 
 FFMPEG = imageio_ffmpeg.get_ffmpeg_exe()
@@ -62,7 +63,7 @@ def load_audio(path):
     proc = run_ffmpeg(["-v", "error", "-i", str(path),
                        "-f", "f32le", "-ac", "1", "-ar", str(SAMPLE_RATE), "-"])
     if proc.returncode != 0:
-        raise RuntimeError(proc.stderr.decode(errors="ignore").strip() or "ffmpeg falló")
+        raise RuntimeError(proc.stderr.decode(errors="ignore").strip() or tr("tx.ffmpeg_failed"))
     return np.frombuffer(proc.stdout, np.float32)
 
 
@@ -200,7 +201,7 @@ def list_monitors():
     user32.EnumDisplayMonitors(None, None, proc(cb), 0)
     return [{"kind": "monitor", "index": i, "left": x, "top": y, "width": w, "height": h,
              "primary": primary,
-             "label": f"Pantalla {i}  ({w}×{h})" + ("  · principal" if primary else "")}
+             "label": tr("rec.screen_label", n=i, w=w, h=h) + (tr("rec.screen_primary") if primary else "")}
             for i, (x, y, w, h, primary) in enumerate(mons, 1)]
 
 
@@ -371,7 +372,7 @@ class ScreenCapture:
                         n += 1
                 time.sleep(0.5 / self.fps)
         except Exception as e:  # noqa: BLE001
-            self.error = f"Video: {e}"
+            self.error = tr("rec.video_error", error=e)
 
     def stop(self):
         self._stop.set()
@@ -468,7 +469,7 @@ class MeetingRecorder:
                 return
             name = self.speaker_name if key == "sys" else self.mic_name
             if not name:
-                raise RuntimeError("no hay un dispositivo elegido en Configuración › Audio")
+                raise RuntimeError(tr("rec.no_device"))
             self._muted.discard(key)
             if key in self._chunks and key not in self._failed:
                 return
@@ -501,7 +502,7 @@ class MeetingRecorder:
                     self.levels[key] = float(min(1.0, np.sqrt(np.mean(data ** 2)) * 6))
         except Exception as e:  # noqa: BLE001
             self._failed.add(key)
-            self.errors.append(f"Audio {key}: {e}")
+            self.errors.append(tr("rec.audio_error", source=key, error=e))
 
     def pull_live(self):
         """Audio nuevo (mezcla mono 48 kHz) desde la última llamada, para transcribir en vivo.
@@ -552,7 +553,7 @@ class MeetingRecorder:
         if not (raw_video or wav_path):
             return None
         self.out_dir.mkdir(parents=True, exist_ok=True)
-        mp4_path = self.out_dir / f"Grabación {self.stamp}.mp4"
+        mp4_path = self.out_dir / f"{tr('rec.file_name', stamp=self.stamp)}.mp4"
         if raw_video and not wav_path:
             shutil.move(str(raw_video), mp4_path)
         else:
@@ -566,7 +567,7 @@ class MeetingRecorder:
                                 str(mp4_path)], timeout=timeout)
                 ok, stderr = r.returncode == 0, r.stderr
             except subprocess.TimeoutExpired:
-                ok, stderr = False, f"ffmpeg no terminó en {timeout / 60:.0f} min".encode()
+                ok, stderr = False, tr("rec.merge_timeout", minutes=f"{timeout / 60:.0f}").encode()
             if not ok or not mp4_path.exists() or mp4_path.stat().st_size == 0:
                 return self._rescue(raw_video, wav_path, mp4_path, stderr)
         return mp4_path if mp4_path.exists() else None
@@ -575,13 +576,12 @@ class MeetingRecorder:
         """ffmpeg no pudo unir video y audio (disco lleno, archivo dañado…): se conservan los dos
         por separado en la carpeta de salida. Sin esto, cleanup() los borraría y se perdería todo."""
         detail = (stderr or b"").decode(errors="ignore").strip()[-300:]
-        self.errors.append("No se pudo unir el video y el audio" + (f" ({detail})" if detail else "")
-                           + ". Se guardaron por separado para no perder la grabación.")
+        self.errors.append(tr("rec.merge_failed", detail=f" ({detail})" if detail else ""))
         failed_mp4.unlink(missing_ok=True)  # pudo quedar a medias
         saved = []
         for src, suffix in ((raw_video, " (video).mp4"), (wav_path, " (audio).wav")):
             if src and Path(src).exists():
-                target = self.out_dir / f"Grabación {self.stamp}{suffix}"
+                target = self.out_dir / f"{tr('rec.file_name', stamp=self.stamp)}{suffix}"
                 shutil.move(str(src), target)
                 saved.append(target)
         return saved[0] if saved else None
@@ -640,8 +640,7 @@ class Transcriber:
         with self._lock:
             if key not in self.models:
                 source = model_source(name)
-                status(f"Cargando el modelo «{name}»…" if source != name
-                       else f"Cargando el modelo «{name}» (la primera vez se descarga)…")
+                status(tr("tx.loading_model" if source != name else "tx.loading_model_first", name=name))
                 self.models[key] = WhisperModel(source, device="cpu", compute_type="int8",
                                                 cpu_threads=threads)
             return self.models[key]
@@ -652,16 +651,16 @@ class Transcriber:
         """Transcribe y guarda .txt y .srt. Devuelve (ruta_txt, ruta_srt, duración)."""
         cancel = cancel or threading.Event()  # uno nuevo por llamada (no compartido entre llamadas)
         m = self.model(model, status)
-        status("Preparando audio…")
+        status(tr("tx.preparing_audio"))
         audio = load_audio(path)
         duration = len(audio) / SAMPLE_RATE
         if duration < 0.5:
-            raise RuntimeError("El archivo no tiene audio o es demasiado corto.")
-        status("Buscando voz en el audio…")
+            raise RuntimeError(tr("tx.too_short"))
+        status(tr("tx.looking_for_speech"))
         if not has_speech(audio):
             raise NoSpeech()
 
-        status("Transcribiendo…")
+        status(tr("tx.transcribing"))
         started = time.time()
         # El filtro VAD acelera audios con silencios, pero descarta voz cantada o con
         # música de fondo, así que es opcional. Menos reintentos por tramo (temperature)
@@ -678,8 +677,8 @@ class Transcriber:
             while not done.wait(2):
                 quiet = time.time() - last["t"]
                 if quiet > 6:
-                    status(f"Transcribiendo… ({short_time(last['pos'])} de {short_time(duration)}) · "
-                           f"hace {int(quiet)} s sin texto nuevo: partes sin voz o con ruido")
+                    status(tr("tx.quiet", pos=short_time(last["pos"]), total=short_time(duration),
+                              seconds=int(quiet)))
 
         threading.Thread(target=heartbeat, daemon=True).start()
         try:
@@ -776,7 +775,7 @@ class LiveTranscriber:
     def _run(self):
         try:
             model = self.transcriber.model(self.model_name, self.on_status, self.threads)
-            self.on_status("Transcribiendo en vivo")
+            self.on_status(tr("live.transcribing"))
             while not self._stop.is_set():
                 time.sleep(0.5)
                 self._pull()
@@ -787,7 +786,7 @@ class LiveTranscriber:
             if len(self._buf):
                 self._transcribe(model, len(self._buf))
         except Exception as e:  # noqa: BLE001
-            self.on_status(f"Error en vivo: {e}")
+            self.on_status(tr("live.error", error=e))
 
     def _pause_at_end(self):
         tail = self._buf[-int(self.TAIL * SAMPLE_RATE):]
@@ -833,6 +832,6 @@ def download_youtube(url, progress=None):
     if not path.exists():
         found = list(tmp.iterdir())
         if not found:
-            raise RuntimeError("No se pudo descargar el audio.")
+            raise RuntimeError(tr("tx.download_failed"))
         path = found[0]
     return path, info.get("title") or path.stem, tmp

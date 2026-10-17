@@ -38,49 +38,57 @@
   @keyframes blink { 50% { opacity: .25; } }
 </style>
 </head>
-<body title="Arrastra para mover">
+<body title="Arrastra para mover" data-i18n-title="bar.drag">
   <span class="dot"></span>
   <span class="time" id="time">00:00</span>
   <button class="meter full" id="mic"><i class="ic">&#xE720;</i><div class="bar"><i></i></div></button>
   <button class="meter full" id="sys"><i class="ic">&#xE767;</i><div class="bar"><i></i></div></button>
   <span class="sep full"></span>
   <span class="controls" style="display:flex; align-items:center; gap:2px">
-    <button class="full" id="pause" title="Pausar">&#xE769;</button>
-    <button class="stop" id="stop" title="Detener y guardar"><i></i></button>
+    <button class="full" id="pause" title="Pausar" data-i18n-title="live.pause">&#xE769;</button>
+    <button class="stop" id="stop" title="Detener y guardar" data-i18n-title="live.stop"><i></i></button>
     <span class="sep full"></span>
-    <button id="compact" title="Modo compacto" style="font-size:12px">&#xE921;</button>
-    <button class="full" id="cancel" title="Descartar grabación" style="font-size:12px">&#xE711;</button>
+    <button id="compact" title="Modo compacto" data-i18n-title="bar.compact" style="font-size:12px">&#xE921;</button>
+    <button class="full" id="cancel" title="Descartar grabación" data-i18n-title="live.discard" style="font-size:12px">&#xE711;</button>
   </span>
-  <span class="saving-text">Guardando…</span>
-  <i class="ic grip" title="Arrastra para mover">&#xE76F;</i>
+  <span class="saving-text" data-i18n="live.saving">Guardando…</span>
+  <i class="ic grip" title="Arrastra para mover" data-i18n-title="bar.drag">&#xE76F;</i>
+<script src="i18n.js"></script>
 <script>
   const $ = (s) => document.querySelector(s);
   const fmt = (s) => { s = Math.floor(s); const m = Math.floor(s / 60), h = Math.floor(m / 60), p = (n) => String(n).padStart(2, "0");
                        return h ? `${h}:${p(m % 60)}:${p(s % 60)}` : `${p(m)}:${p(s % 60)}`; };
-  const AUDIO = {
-    mic: { on: "", label: "Micrófono" },
-    sys: { on: "", label: "Audio del sistema" },
-  };
-  let compact = false;
+  let compact = false, paused = false, audio = {};
 
   /** Estado de cada fuente: encendida/apagada (clic para cambiar). */
   window.setAudio = (a) => {
+    audio = a;
     for (const key of ["mic", "sys"]) {
       const b = $("#" + key), on = !!a[key];
       b.classList.toggle("off", !on);
-      b.title = `${AUDIO[key].label}: ${on ? "activo" : "silenciado"} · clic para ${on ? "silenciar" : "activar"}`;
+      b.title = t("bar.audio", { label: t(`audio.${key}`), state: t(on ? "live.on" : "live.muted"),
+                                action: t(on ? "live.clickToMute" : "live.clickToUnmute") });
     }
   };
-  window.init = (f) => window.setAudio(f);
+  /** Idioma de la app (lo envía Python al abrir la barra y si cambia en Configuración). */
+  // (no se llama setLang: ese nombre ya es la función global de i18n.js)
+  window.applyLang = (lang) => {
+    setLang(lang);
+    window.setAudio(audio);
+    window.setPaused(paused);
+    $("#compact").title = t(compact ? "bar.expand" : "bar.compact");
+  };
+  window.init = (f) => { window.setAudio(f); window.applyLang(f.lang); };
   window.update = (ev) => {
     $("#time").textContent = fmt(ev.elapsed);
     $("#mic .bar i").style.width = `${Math.max(0, ev.mic) * 100}%`;
     $("#sys .bar i").style.width = `${Math.max(0, ev.sys) * 100}%`;
   };
   window.setPaused = (p) => {
+    paused = p;
     document.body.classList.toggle("paused", p);
     $("#pause").textContent = p ? "" : "";
-    $("#pause").title = p ? "Reanudar" : "Pausar";
+    $("#pause").title = t(p ? "live.resume" : "live.pause");
   };
   window.setSaving = () => document.body.classList.add("saving");
 
@@ -93,7 +101,7 @@
     compact = !compact;
     document.body.classList.toggle("compact", compact);
     $("#compact").textContent = compact ? "" : "";
-    $("#compact").title = compact ? "Mostrar todo" : "Modo compacto";
+    $("#compact").title = t(compact ? "bar.expand" : "bar.compact");
     pywebview.api.compact(compact);
   };
   $(".time").ondblclick = () => pywebview.api.show_app();

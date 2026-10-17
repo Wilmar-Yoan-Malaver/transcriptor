@@ -19,14 +19,15 @@ const G = {
   eye: "", refresh: "", share: "", close: "", more: "", trash: "",
 };
 
+// Opciones fijas de los selectores: [valor, clave del texto] (el texto sale de i18n.js).
 const OPTIONS = {
-  models: [["tiny", "tiny · el más rápido"], ["base", "base · rápido"], ["small", "small · equilibrado (recomendado)"],
-           ["medium", "medium · más preciso, lento"], ["large-v3-turbo", "large-v3-turbo · el más preciso"]],
-  liveModels: [["tiny", "tiny · mínimo retraso"], ["base", "base · equilibrado (recomendado)"], ["small", "small · más preciso, puede atrasarse"]],
-  languages: [["", "Detectar automáticamente"], ["es", "Español"], ["en", "Inglés"], ["pt", "Portugués"],
-              ["fr", "Francés"], ["it", "Italiano"], ["de", "Alemán"]],
-  qualities: [["1080p", "Alta · 1080p (recomendado)"], ["720p", "Media · 720p (archivos livianos)"], ["original", "Original · resolución completa"]],
-  fps: [[15, "15"], [30, "30 (recomendado)"], [60, "60"]],
+  models: [["tiny", "model.tiny"], ["base", "model.base"], ["small", "model.small"],
+           ["medium", "model.medium"], ["large-v3-turbo", "model.large"]],
+  liveModels: [["tiny", "liveModel.tiny"], ["base", "liveModel.base"], ["small", "liveModel.small"]],
+  languages: [["", "lang.auto"], ["es", "lang.es"], ["en", "lang.en"], ["pt", "lang.pt"],
+              ["fr", "lang.fr"], ["it", "lang.it"], ["de", "lang.de"]],
+  qualities: [["1080p", "quality.1080p"], ["720p", "quality.720p"], ["original", "quality.original"]],
+  fps: [[15, "15"], [30, "fps.30"], [60, "60"]],
 };
 
 const EXCLUDE = ["Transcriptor", "Transcriptor · grabando"];
@@ -67,7 +68,8 @@ const DET_TX_IDLE = { phase: "idle", status: "", pct: null };
 
 const store = createStore({
   view: "home",
-  engine: { ready: false, status: "Iniciando motor…", error: false },
+  lang: "es",  // idioma de la interfaz; cambiarlo vuelve a dibujar todas las pantallas
+  engine: { ready: false, status: "", error: false },
   config: {},
   devices: { speakers: [], mics: [] },
   monitors: [],
@@ -78,9 +80,9 @@ const store = createStore({
   tx: { mode: "file", job: null, running: false, showProgress: false, status: "", pct: null, lines: [],
         txt: null, srt: null },
   // Transcripción guardada abierta desde el Historial o la ficha (pantalla de solo lectura).
-  viewer: { txt: null, srt: null, lines: [], back: null, backLabel: "Historial" },
+  viewer: { txt: null, srt: null, lines: [], back: null, backKey: "nav.history" },
   det: { path: null, justRecorded: false, info: null, infoError: null, created: null, txt: null,
-         req: null, transcribeWhenLoaded: false, tx: DET_TX_IDLE, preview: { title: "Transcripción", lines: [] } },
+         req: null, transcribeWhenLoaded: false, tx: DET_TX_IDLE, preview: { titleKey: "det.preview", lines: [] } },
   // Transcripción de una grabación pedida desde su ficha. Vive fuera de `det` para que siga
   // (y se vea su avance) aunque el usuario cambie de pantalla o abra otra grabación.
   recTx: null,  // { job, path, phase: "running", status, pct, lines }
@@ -98,10 +100,10 @@ const S = () => store.get();
 function toast(text, glyph = G.info) {
   $("#toastText").textContent = text;
   $("#toastIcon").textContent = glyph;
-  const t = $("#toast");
-  t.classList.add("show");
+  const el = $("#toast");
+  el.classList.add("show");
   clearTimeout(toast.timer);
-  toast.timer = setTimeout(() => t.classList.remove("show"), 3500);
+  toast.timer = setTimeout(() => el.classList.remove("show"), 3500);
 }
 
 const liveLine = (seg) => (S().config.timestamps ? `[${fmtDur(seg.start)}] ${seg.text}` : seg.text);
@@ -149,12 +151,13 @@ function renderNav(s) {
 
 function renderEngine(s) {
   const e = s.engine, pill = $("#enginePill");
-  $("#engineText").textContent = e.status;
-  pill.title = e.status;
+  const status = e.status || t("engine.starting");
+  $("#engineText").textContent = status;
+  pill.title = status;
   pill.classList.toggle("ok", e.ready);
   pill.classList.toggle("err", e.error);
   $("#cfgEngine").textContent = s.enginePath;
-  $("#aboutVersion").textContent = s.version ? `Versión ${s.version}` : "";
+  $("#aboutVersion").textContent = s.version ? t("about.version", { version: s.version }) : "";
 }
 
 /** Valores de los controles enlazados con data-cfg (se sincronizan en todas las pantallas). */
@@ -187,19 +190,19 @@ function renderHome(s) {
   show($("#srcChange"), !audioOnly);
   if (audioOnly) {
     $("#srcIcon").textContent = G.audio;
-    $("#srcText").textContent = "Solo audio (sin video)";
+    $("#srcText").textContent = t("home.audioOnlySrc");
   } else {
     const src = currentSource(s);
     $("#srcIcon").textContent = src?.kind === "window" ? G.window : G.monitor;
     $("#srcText").textContent = src?.label
-      || (c.captureKind === "window" ? "Elige una ventana" : s.engine.ready ? "Elige una pantalla" : "Buscando pantallas…");
+      || t(c.captureKind === "window" ? "home.chooseWindow" : s.engine.ready ? "home.chooseScreen" : "home.searchingScreens");
   }
   $('#view-home [data-cfg="speaker"]').disabled = !["both", "sys"].includes(c.audioMode);
   $('#view-home [data-cfg="mic"]').disabled = !["both", "mic"].includes(c.audioMode);
   const busy = s.rec.state !== "idle";
   $("#recordBtn").disabled = busy;
-  $("#recordText").textContent = busy ? "Grabación en curso…" : "Iniciar grabación";
-  $("#recordHint").textContent = `Se guardará en ${c.outputDir || ""}`;
+  $("#recordText").textContent = t(busy ? "home.recordingBusy" : "home.start");
+  $("#recordHint").textContent = t("home.savedIn", { dir: c.outputDir || "" });
 }
 
 function renderPicker(s) {
@@ -208,25 +211,25 @@ function renderPicker(s) {
   if (!p.open) return;
   $$("[data-ptab]").forEach((b) => {
     b.classList.toggle("on", b.dataset.ptab === p.tab);
-    $("span", b).textContent = (b.dataset.ptab === "monitor" ? "Pantalla completa" : "Ventana") + ` (${p[b.dataset.ptab].length})`;
+    $("span", b).textContent = t(b.dataset.ptab === "monitor" ? "capture.monitor" : "picker.window") + ` (${p[b.dataset.ptab].length})`;
   });
   $("#pickOk").disabled = !p.selected;
-  $("#pickSel").textContent = p.selected ? p.selected.label : "Nada seleccionado";
+  $("#pickSel").textContent = p.selected ? p.selected.label : t("picker.none");
 
   const box = $("#pickTiles");
   const list = p[p.tab];
-  const signature = p.loading ? "loading" : p.tab + "|" + list.map(srcKey).join(",");
+  const signature = S().lang + "|" + (p.loading ? "loading" : p.tab + "|" + list.map(srcKey).join(","));
   if (box._signature !== signature) {  // solo se rehacen las tarjetas si cambió la lista
     box._signature = signature;
     box.innerHTML = "";
-    if (p.loading) box.innerHTML = `<div class="empty">Buscando pantallas y ventanas…</div>`;
-    else if (!list.length) box.innerHTML = `<div class="empty">${p.tab === "window" ? "No hay ventanas abiertas para grabar." : "No se encontraron pantallas."}</div>`;
+    if (p.loading) box.innerHTML = `<div class="empty">${esc(t("picker.loading"))}</div>`;
+    else if (!list.length) box.innerHTML = `<div class="empty">${esc(t(p.tab === "window" ? "picker.noWindows" : "picker.noScreens"))}</div>`;
     for (const src of p.loading ? [] : list) {
       const b = document.createElement("button");
       b.className = "src";
       b.dataset.key = srcKey(src);
       b.title = src.label;
-      b.innerHTML = `<div class="shot">${src.minimized ? "Minimizada<br>se restaurará al grabar" : "Cargando vista previa…"}</div>
+      b.innerHTML = `<div class="shot">${src.minimized ? `${esc(t("picker.minimized"))}<br>${esc(t("picker.minimizedHint"))}` : esc(t("picker.loadingPreview"))}</div>
         <div class="cap">${src.kind === "window" && src.app ? `<small>${esc(src.app)}</small>` : ""}<b>${esc(src.kind === "window" ? src.title : src.label)}</b></div>`;
       b.addEventListener("click", () => patch("picker", { selected: src }));
       b.addEventListener("dblclick", () => { patch("picker", { selected: src }); acceptPicker(); });
@@ -240,7 +243,7 @@ function renderPicker(s) {
       b._thumb = p.thumbs[key];
       const shot = $(".shot", b);
       if (isBase64(p.thumbs[key])) shot.innerHTML = `<img src="data:image/png;base64,${p.thumbs[key]}">`;
-      else if (!shot.textContent.includes("Minimizada")) shot.textContent = "Sin vista previa";
+      else if (!shot.textContent.includes(t("picker.minimized"))) shot.textContent = t("picker.noPreview");
     }
   }
 }
@@ -249,44 +252,41 @@ function renderRecording(s) {
   const r = s.rec;
   if (r.state === "idle") return;
   $("#recHead").classList.toggle("paused", r.paused);
-  $("#recTitle").textContent = r.saving ? "Guardando…" : r.paused ? "En pausa" : "Grabando";
+  $("#recTitle").textContent = t(r.saving ? "live.saving" : r.paused ? "live.paused" : "live.recording");
   $("#recPause .ic").textContent = r.paused ? G.play : G.pause;
-  $("#recPause span").textContent = r.paused ? "Reanudar" : "Pausar";
+  $("#recPause span").textContent = t(r.paused ? "live.resume" : "live.pause");
   $("#recStop").disabled = $("#recPause").disabled = r.saving;
   $("#recTimer").textContent = fmtDur(r.elapsed);
   $("#recSource").textContent = r.sourceLabel;
   for (const [key, id] of [["mic", "#meterMic"], ["sys", "#meterSys"]]) {
     const on = !!r.audio[key], el = $(id);
     el.classList.toggle("off", !on);
-    $("small", el).textContent = on ? "activo" : "silenciado";
-    el.title = `Clic para ${on ? "silenciar" : "activar"}`;
+    $("small", el).textContent = t(on ? "live.on" : "live.muted");
+    el.title = t(on ? "live.clickToMute" : "live.clickToUnmute");
     $(".bar i", el).style.width = on ? `${Math.max(0, r.levels[key] || 0) * 100}%` : "0";
   }
   show($("#liveTag"), r.live);
   $("#liveStatus").textContent = r.liveStatus;
   syncLines($("#liveText"), r.segments.map(liveLine));
   show($("#livePlaceholder"), !r.segments.length);
-  $("#livePlaceholderText").textContent = r.live
-    ? "Las frases aparecerán aquí mientras hablan."
-    : "La transcripción en vivo está desactivada. Actívala en Inicio › Opciones adicionales.";
+  $("#livePlaceholderText").textContent = t(r.live ? "live.placeholder" : "live.disabled");
 }
 
 function renderTranscribe(s) {
-  const t = s.tx;
-  $$("[data-src]").forEach((b) => b.classList.toggle("on", b.dataset.src === t.mode));
-  $("#txInput").placeholder = t.mode === "url"
-    ? "Pega el link de YouTube (https://www.youtube.com/watch?v=…)" : "Elige un archivo (MP4, MKV, MOV, MP3, WAV…)";
-  show($("#txBrowse"), t.mode !== "url");
-  show($("#txProgressCard"), t.showProgress);
-  $("#txStatus").textContent = t.status;
-  $("#txPct").textContent = t.running && t.pct != null ? `${Math.round(t.pct)}%` : "";
-  setProgress($("#txBar"), t.pct);
-  $("#txCancel").disabled = !t.running;
-  syncLines($("#txOutput"), t.lines);
-  show($("#txPlaceholder"), !t.lines.length && !t.showProgress);
+  const tx = s.tx;
+  $$("[data-src]").forEach((b) => b.classList.toggle("on", b.dataset.src === tx.mode));
+  $("#txInput").placeholder = t(tx.mode === "url" ? "tx.urlPlaceholder" : "tx.filePlaceholder");
+  show($("#txBrowse"), tx.mode !== "url");
+  show($("#txProgressCard"), tx.showProgress);
+  $("#txStatus").textContent = tx.status;
+  $("#txPct").textContent = tx.running && tx.pct != null ? `${Math.round(tx.pct)}%` : "";
+  setProgress($("#txBar"), tx.pct);
+  $("#txCancel").disabled = !tx.running;
+  syncLines($("#txOutput"), tx.lines);
+  show($("#txPlaceholder"), !tx.lines.length && !tx.showProgress);
   $("#txStart").disabled = s.txBusy;
-  $("#txOpenTxt").disabled = !t.txt;
-  $("#txOpenSrt").disabled = !t.srt;
+  $("#txOpenTxt").disabled = !tx.txt;
+  $("#txOpenSrt").disabled = !tx.srt;
 }
 
 function renderPager(page, pages) {
@@ -304,12 +304,12 @@ function renderPager(page, pages) {
     b.addEventListener("click", () => setHistoryPage(target));
     nav.appendChild(b);
   };
-  btn(`<i class="ic"></i>Anterior`, page - 1, { disabled: page === 1, aria: "Página anterior" });
+  btn(`<i class="ic"></i>${esc(t("pager.prev"))}`, page - 1, { disabled: page === 1, aria: t("pager.prevAria") });
   for (const n of pageNumbers(page, pages)) {
     if (n === "…") nav.insertAdjacentHTML("beforeend", `<span class="gap">…</span>`);
-    else btn(String(n), n, { on: n === page, aria: `Página ${n}` });
+    else btn(String(n), n, { on: n === page, aria: t("pager.page", { n }) });
   }
-  btn(`Siguiente<i class="ic"></i>`, page + 1, { disabled: page === pages, aria: "Página siguiente" });
+  btn(`${esc(t("pager.next"))}<i class="ic"></i>`, page + 1, { disabled: page === pages, aria: t("pager.nextAria") });
 }
 
 /** Transcripción guardada (solo lectura): no comparte nada con la página "Transcribir". */
@@ -317,10 +317,10 @@ function renderViewer(s) {
   const v = s.viewer;
   if (!v.txt) return;
   const name = baseName(v.txt);
-  $("#vwBackLabel").textContent = v.backLabel;
+  $("#vwBackLabel").textContent = t(v.backKey);
   setName($("#vwCrumb"), name);
   setName($("#vwTitle"), name);
-  $("#vwInfo").textContent = `${v.lines.length} ${v.lines.length === 1 ? "línea" : "líneas"} · ${dirName(v.txt)}`;
+  $("#vwInfo").textContent = `${tn("viewer.lines", v.lines.length)} · ${dirName(v.txt)}`;
   syncLines($("#vwText"), v.lines);
 }
 
@@ -334,12 +334,12 @@ function renderHistory(s) {
 
   $("#histFolder").textContent = folder;
   $("#histCount").textContent = total ? String(total) : "";
-  $("#histCount").title = `${total} ${total === 1 ? "elemento" : "elementos"} en la carpeta`;
+  $("#histCount").title = tn("history.count", total);
   show($("#histRange"), total > 0);
   const recordings = items.filter((i) => i.media).length;
-  $("#histRange").textContent = `Mostrando ${first + 1}–${first + visible.length} de ${total} · `
-    + `${recordings} ${recordings === 1 ? "grabación" : "grabaciones"}`
-    + (total - recordings ? ` y ${total - recordings} ${total - recordings === 1 ? "transcripción" : "transcripciones"}` : "");
+  $("#histRange").textContent = t("history.range", { from: first + 1, to: first + visible.length, total })
+    + tn("history.recordings", recordings)
+    + (total - recordings ? t("history.and") + tn("history.transcripts", total - recordings) : "");
   show($("#histEmpty"), !total);
   renderPager(page, pages);
 
@@ -350,10 +350,11 @@ function renderHistory(s) {
     el.className = "item";
     const glyph = !it.media ? G.doc : it.audioOnly ? G.audio : G.video;
     const busy = it.media && recTxFor(it.media, s);
-    const tag = busy ? `<span class="tag">Transcribiendo…</span>`
-      : it.media && it.txt ? `<span class="tag ok">Transcrito</span>` : !it.media ? `<span class="tag">Transcripción</span>` : "";
+    const tag = busy ? `<span class="tag">${esc(t("status.transcribing"))}</span>`
+      : it.media && it.txt ? `<span class="tag ok">${esc(t("history.tagTranscribed"))}</span>`
+      : !it.media ? `<span class="tag">${esc(t("history.tagTranscript"))}</span>` : "";
     el.innerHTML = `<div class="badge ${it.media ? "" : "doc"}"><i class="ic">${glyph}</i></div>
-      <div class="info"><b title="${esc(it.name)}">${esc(shortName(it.name))}</b><div class="meta"><span>${fmtDate(it.date)} · ${fmtSize(it.size)}</span>${tag}</div></div>`;
+      <div class="info"><b title="${esc(it.name)}">${esc(shortName(it.name))}</b><div class="meta"><span>${fmtDate(it.date, locale())} · ${fmtSize(it.size)}</span>${tag}</div></div>`;
     const actions = document.createElement("div");
     const add = (glyph, title, fn, danger = false) => {
       const b = document.createElement("button");
@@ -364,15 +365,15 @@ function renderHistory(s) {
       b.addEventListener("click", (e) => { e.stopPropagation(); fn(); });
       actions.appendChild(b);
     };
-    if (it.media) add(G.play, "Reproducir", () => api.open_path(it.media));
-    if (it.media && !it.txt && !busy) add(G.doc, "Transcribir", () => openDetails(it.media, { transcribe: true }));
-    if (it.txt) add(G.eye, "Ver transcripción", () => showTranscript(it.txt, "Historial", () => go("history")));
-    add(G.folder, "Mostrar en la carpeta", () => api.reveal(it.media || it.txt));
-    add(G.trash, "Eliminar", () => confirmDelete(it.media || it.txt, loadHistory), true);
-    if (it.media) add(G.more, "Detalles", () => openDetails(it.media));
+    if (it.media) add(G.play, t("common.play"), () => api.open_path(it.media));
+    if (it.media && !it.txt && !busy) add(G.doc, t("nav.transcribe"), () => openDetails(it.media, { transcribe: true }));
+    if (it.txt) add(G.eye, t("det.viewTx"), () => showTranscript(it.txt, "nav.history", () => go("history")));
+    add(G.folder, t("history.reveal"), () => api.reveal(it.media || it.txt));
+    add(G.trash, t("common.delete"), () => confirmDelete(it.media || it.txt, loadHistory), true);
+    if (it.media) add(G.more, t("history.details"), () => openDetails(it.media));
     el.appendChild(actions);
     el.addEventListener("click", () => (it.media ? openDetails(it.media)
-      : showTranscript(it.txt, "Historial", () => go("history"))));
+      : showTranscript(it.txt, "nav.history", () => go("history"))));
     box.appendChild(el);
   }
 }
@@ -380,7 +381,7 @@ function renderHistory(s) {
 function renderDetails(s) {
   const d = s.det;
   if (!d.path) return;
-  $("#detTitle").textContent = d.justRecorded ? "Grabación completada" : "Detalles";
+  $("#detTitle").textContent = t(d.justRecorded ? "det.completed" : "det.details");
   show($("#detCheck"), d.justRecorded);
   // Nombres largos: se muestran cortos (20 caracteres + "…") y completos en el tooltip.
   setName($("#detCrumb"), baseName(d.path));
@@ -390,7 +391,7 @@ function renderDetails(s) {
     name.title = baseName(d.path);
   }
   $("#detFolder").textContent = dirName(d.path);
-  $("#detDate").textContent = d.created ? fmtDate(d.created) : "";
+  $("#detDate").textContent = d.created ? fmtDate(d.created, locale()) : "";
 
   const info = d.info, img = $("#detImg");
   const thumb = isBase64(info?.thumb) ? info.thumb : null;
@@ -399,23 +400,22 @@ function renderDetails(s) {
   show($("#detAudioIcon"), !!info && !info.has_video);
   $("#detDur").textContent = info ? fmtDur(info.duration) : "";
   $("#detFmtIcon").textContent = info && !info.has_video ? G.audio : G.video;
-  $("#detFmt").textContent = d.infoError ? "No se pudo leer: " + d.infoError
-    : !info ? "Leyendo archivo…"
-    : info.has_video ? `${info.width}×${info.height}${info.height >= 1080 ? " (Full HD)" : ""} · ${info.fps} FPS` : "Solo audio";
+  $("#detFmt").textContent = d.infoError ? t("det.readError", { error: d.infoError })
+    : !info ? t("det.reading")
+    : info.has_video ? `${info.width}×${info.height}${info.height >= 1080 ? " (Full HD)" : ""} · ${info.fps} FPS` : t("capture.audio");
   $("#detSize").textContent = info ? fmtSize(info.size) : "";
 
   // Tarjeta "Generar transcripción": se deriva de la fase.
   const running = recTxFor(d.path, s);
   const tx = running || d.tx;
   const otherBusy = !running && (s.txBusy || !!s.recTx);
-  const titles = { idle: d.txt ? "Volver a transcribir" : "Generar transcripción", running: "Transcribiendo…",
-                   done: "Transcripción lista", nospeech: "Sin voz detectada", error: "Generar transcripción",
-                   canceled: "Generar transcripción" };
+  const titles = { idle: d.txt ? "det.retranscribe" : "det.generate", running: "status.transcribing",
+                   done: "det.done", nospeech: "det.nospeech", error: "det.generate", canceled: "det.generate" };
   $("#detTxIcon").textContent = tx.phase === "done" ? G.check : tx.phase === "nospeech" ? G.info : G.doc;
-  $("#detTxTitle").textContent = titles[tx.phase];
+  $("#detTxTitle").textContent = t(titles[tx.phase]);
   show($("#detTxBar"), tx.phase === "running");
   setProgress($("#detTxBar"), tx.pct);
-  const status = tx.status || (otherBusy ? "Hay otra transcripción en curso. Espera a que termine." : "");
+  const status = tx.status || (otherBusy ? t("det.otherBusy") : "");
   show($("#detTxStatus"), !!status);
   $("#detTxStatus").textContent = status;
   $("#detTx").disabled = tx.phase === "running" || otherBusy;
@@ -423,21 +423,21 @@ function renderDetails(s) {
 
   const lines = running?.lines.length ? running.lines : d.preview.lines;
   show($("#detPreviewCard"), lines.length > 0);
-  $("#detPreviewTitle").textContent = running?.lines.length ? "Transcripción" : d.preview.title;
+  $("#detPreviewTitle").textContent = t(running?.lines.length ? "det.preview" : d.preview.titleKey);
   syncLines($("#detPreview"), lines);
 }
 
 store.subscribe(["view", "rec"], renderNav);
-store.subscribe(["engine", "version", "enginePath"], renderEngine);
-store.subscribe(["config"], renderConfig);
+store.subscribe(["engine", "version", "enginePath", "lang"], renderEngine);
+store.subscribe(["config", "lang"], renderConfig);
 store.subscribe(["devices"], renderDeviceLists);
-store.subscribe(["config", "source", "monitors", "engine", "rec"], renderHome);
-store.subscribe(["picker"], renderPicker);
-store.subscribe(["rec", "config"], renderRecording);
-store.subscribe(["tx", "txBusy"], renderTranscribe);
-store.subscribe(["viewer"], renderViewer);
-store.subscribe(["history", "recTx"], renderHistory);
-store.subscribe(["det", "txBusy", "recTx"], renderDetails);
+store.subscribe(["config", "source", "monitors", "engine", "rec", "lang"], renderHome);
+store.subscribe(["picker", "lang"], renderPicker);
+store.subscribe(["rec", "config", "lang"], renderRecording);
+store.subscribe(["tx", "txBusy", "lang"], renderTranscribe);
+store.subscribe(["viewer", "lang"], renderViewer);
+store.subscribe(["history", "recTx", "lang"], renderHistory);
+store.subscribe(["det", "txBusy", "recTx", "lang"], renderDetails);
 
 // ======================================================================= acciones
 
@@ -462,6 +462,27 @@ function goBack() {
 function setConfig(key, value) {
   patch("config", { [key]: value });
   api.set_config(key, value);
+  if (key === "uiLanguage") applyLanguage(value);
+}
+
+/** Llena los selectores de opciones fijas (modelos, idiomas…) en el idioma actual. */
+function fillOptions() {
+  for (const sel of $$("select[data-options]")) {
+    const value = sel.value;
+    sel.innerHTML = OPTIONS[sel.dataset.options]
+      .map(([v, key]) => `<option value="${esc(v)}">${esc(t(key))}</option>`).join("");
+    sel.value = value;
+  }
+}
+
+/** Cambia el idioma de toda la interfaz: textos fijos, selectores y pantallas. */
+function applyLanguage(lang) {
+  setLang(lang);
+  fillOptions();
+  const e = S().engine;
+  if (e.ready) patch("engine", { status: t("engine.ready") });
+  else if (e.error) patch("engine", { status: t("engine.stopped") });
+  store.set({ lang: LANG });
 }
 
 /** La fuente efectiva: con "Ventana" elegida, solo cuenta si de verdad hay una ventana. */
@@ -479,7 +500,7 @@ function defaultMonitor(s = S()) {
 
 function refreshDevices() {
   api.send({ cmd: "list_devices" });
-  toast("Dispositivos de audio actualizados.", G.refresh);
+  toast(t("toast.devicesRefreshed"), G.refresh);
 }
 
 async function startRecording() {
@@ -497,7 +518,7 @@ async function startRecording() {
 // --- selector de pantalla
 
 function openPicker(tab) {
-  if (!S().engine.ready) { toast("El motor todavía se está iniciando…", G.warn); return; }
+  if (!S().engine.ready) { toast(t("toast.engineStarting"), G.warn); return; }
   store.set({ picker: { open: true, tab, monitor: [], window: [], thumbs: {}, selected: null, loading: true } });
   api.send({ cmd: "list_sources", exclude: EXCLUDE });
 }
@@ -521,38 +542,41 @@ function txOptions() {
 }
 
 function startPageTx() {
-  const s = S(), t = s.tx;
+  const s = S(), tx = s.tx;
   const input = $("#txInput").value.trim().replace(/^"|"$/g, "");
-  if (s.txBusy) { toast("Ya hay una transcripción en curso.", G.warn); return; }
-  if (!input) { toast(t.mode === "url" ? "Pega un link de YouTube." : "Elige un archivo.", G.warn); return; }
-  if (t.mode === "url" && !/^https?:\/\//i.test(input)) { toast("Pega un link válido (https://…).", G.warn); return; }
+  if (s.txBusy) { toast(t("toast.txBusy"), G.warn); return; }
+  if (!input) { toast(t(tx.mode === "url" ? "toast.pasteLink" : "toast.chooseFile"), G.warn); return; }
+  if (tx.mode === "url" && !/^https?:\/\//i.test(input)) { toast(t("toast.invalidLink"), G.warn); return; }
   const job = jobId("page");
-  const msg = t.mode === "url" ? { cmd: "youtube", url: input } : { cmd: "transcribe", path: input, title: baseName(input) };
+  const msg = tx.mode === "url" ? { cmd: "youtube", url: input } : { cmd: "transcribe", path: input, title: baseName(input) };
   api.send({ ...msg, ...txOptions(), job });
-  patch("tx", { job, running: true, showProgress: true, status: t.mode === "url" ? "Conectando con YouTube…" : "Preparando…",
+  patch("tx", { job, running: true, showProgress: true,
+                status: t(tx.mode === "url" ? "status.connectingYoutube" : "status.preparing"),
                 pct: null, lines: [], txt: null, srt: null });
 }
 
 function onPageTx(ev) {
-  const t = S().tx;
+  const tx = S().tx;
   const finish = (status, extra = {}) => patch("tx", { job: null, running: false, status, pct: 0, ...extra });
   switch (ev.type) {
-    case "tx_download": patch("tx", { status: "Descargando audio…", pct: ev.pct }); break;
-    case "tx_started": patch("tx", { lines: [...t.lines, `── ${ev.title} ──`] }); break;
+    case "tx_download": patch("tx", { status: t("status.downloading"), pct: ev.pct }); break;
+    case "tx_started": patch("tx", { lines: [...tx.lines, `── ${ev.title} ──`] }); break;
     case "tx_status": patch("tx", { status: ev.text, pct: null }); break;
-    case "tx_progress": patch("tx", { status: `Transcribiendo… faltan ~${fmtDur(ev.eta)}`, pct: ev.pct }); break;
-    case "tx_segment": patch("tx", { lines: [...t.lines, ev.line] }); break;
-    case "tx_done": finish(`Listo · guardado como ${baseName(ev.txt)}.txt y .srt`, { pct: 100, txt: ev.txt, srt: ev.srt }); break;
-    case "tx_canceled": finish("Transcripción cancelada."); break;
-    case "tx_nospeech": finish("No se detectó voz en este audio: no hay nada que transcribir."); break;
-    case "tx_error": finish("Error: " + ev.message); break;
+    case "tx_progress": patch("tx", { status: t("status.remaining", { eta: fmtDur(ev.eta) }), pct: ev.pct }); break;
+    case "tx_segment": patch("tx", { lines: [...tx.lines, ev.line] }); break;
+    case "tx_done":
+      finish(t("status.doneSaved", { name: baseName(ev.txt) }), { pct: 100, txt: ev.txt, srt: ev.srt });
+      break;
+    case "tx_canceled": finish(t("status.canceled")); break;
+    case "tx_nospeech": finish(t("status.nospeechFile")); break;
+    case "tx_error": finish(t("status.error", { error: ev.message })); break;
   }
 }
 
 /** Abre una transcripción guardada en su propia pantalla (solo lectura), con "← volver". */
-async function showTranscript(txt, backLabel, back) {
+async function showTranscript(txt, backKey, back) {
   const text = await api.read_text(txt);
-  store.set({ viewer: { txt, srt: withExt(txt, ".srt"), lines: textLines(text), back, backLabel } });
+  store.set({ viewer: { txt, srt: withExt(txt, ".srt"), lines: textLines(text), back, backKey } });
   go("transcript");
 }
 
@@ -572,7 +596,7 @@ function resetTranscribe() {
 async function copyText(text) {
   if (!text.trim()) return;
   await api.copy_text(text.trim());
-  toast("Texto copiado al portapapeles.", G.copy);
+  toast(t("toast.copied"), G.copy);
 }
 
 // --- historial
@@ -593,16 +617,15 @@ function setHistoryPage(page) {
 function confirmDelete(path, after) {
   const s = S();
   if (recTxFor(path, s)) {
-    toast("Espera a que termine la transcripción de esta grabación.", G.warn);
+    toast(t("toast.waitThisTx"), G.warn);
     return;
   }
-  showDialog("¿Eliminar esta grabación?",
-    `«${baseName(path)}» se enviará a la Papelera de reciclaje junto con su transcripción (.txt y .srt). Podrás recuperarla desde allí.`, [
-      { icon: G.trash, title: "Eliminar", text: "Mover a la Papelera de reciclaje", danger: true,
+  showDialog(t("del.title"), t("del.text", { name: baseName(path) }), [
+      { icon: G.trash, title: t("common.delete"), text: t("del.option"), danger: true,
         run: async () => {
           const r = await api.delete_recording(path);
           if (r.error) { toast(r.error, G.warn); return; }
-          toast(`«${baseName(path)}» se movió a la Papelera.`, G.trash);
+          toast(t("toast.deleted", { name: baseName(path) }), G.trash);
           after();
         } },
     ]);
@@ -614,7 +637,7 @@ async function openDetails(path, { justRecorded = false, info = null, transcribe
   const req = info ? null : jobId("info");
   store.set({ det: { path, justRecorded, info, infoError: null, created: null, txt: null, req,
                      transcribeWhenLoaded: transcribe && !info, tx: DET_TX_IDLE,
-                     preview: { title: "Transcripción", lines: [] } } });
+                     preview: { titleKey: "det.preview", lines: [] } } });
   go("details");
   if (req) api.send({ cmd: "media_info", path, req });
 
@@ -628,7 +651,7 @@ async function openDetails(path, { justRecorded = false, info = null, transcribe
 
 async function loadDetPreview(txt) {
   const text = await api.read_text(txt);
-  patch("det", { preview: { title: "Transcripción", lines: textLines(text) } });
+  patch("det", { preview: { titleKey: "det.preview", lines: textLines(text) } });
 }
 
 /** La transcripción en curso de esta grabación, o null. */
@@ -642,11 +665,11 @@ function startRecTx(path, job, status) {
 
 function startDetailsTx() {
   const d = S().det;
-  if (S().txBusy || S().recTx) { toast("Ya hay una transcripción en curso.", G.warn); return; }
+  if (S().txBusy || S().recTx) { toast(t("toast.txBusy"), G.warn); return; }
   const job = jobId("rec");
   api.send({ cmd: "transcribe", path: d.path, title: baseName(d.path), ...txOptions(), out_dir: dirName(d.path), job });
-  patch("det", { tx: DET_TX_IDLE, preview: { title: "Transcripción", lines: [] } });
-  startRecTx(d.path, job, "Preparando…");
+  patch("det", { tx: DET_TX_IDLE, preview: { titleKey: "det.preview", lines: [] } });
+  startRecTx(d.path, job, t("status.preparing"));
 }
 
 function onRecTx(ev) {
@@ -654,14 +677,12 @@ function onRecTx(ev) {
   const update = (changes) => store.set({ recTx: { ...r, ...changes } });
   switch (ev.type) {
     case "tx_status": update({ status: ev.text, pct: null }); break;
-    case "tx_progress": update({ status: `${Math.round(ev.pct)}% · faltan ~${fmtDur(ev.eta)}`, pct: ev.pct }); break;
+    case "tx_progress": update({ status: t("status.pctRemaining", { pct: Math.round(ev.pct), eta: fmtDur(ev.eta) }), pct: ev.pct }); break;
     case "tx_segment": update({ lines: [...r.lines, ev.line] }); break;
-    case "tx_done": finishRecTx(r, { phase: "done", status: "Guardada como .txt y .srt" }, ev.txt); break;
-    case "tx_nospeech":
-      finishRecTx(r, { phase: "nospeech", status: "La grabación no tiene voz: no hay nada que transcribir." });
-      break;
-    case "tx_error": finishRecTx(r, { phase: "error", status: "Error: " + ev.message }); break;
-    case "tx_canceled": finishRecTx(r, { phase: "canceled", status: "Cancelada" }); break;
+    case "tx_done": finishRecTx(r, { phase: "done", status: t("status.savedTxtSrt") }, ev.txt); break;
+    case "tx_nospeech": finishRecTx(r, { phase: "nospeech", status: t("status.nospeechRec") }); break;
+    case "tx_error": finishRecTx(r, { phase: "error", status: t("status.error", { error: ev.message }) }); break;
+    case "tx_canceled": finishRecTx(r, { phase: "canceled", status: t("status.canceledShort") }); break;
   }
 }
 
@@ -671,12 +692,12 @@ function finishRecTx(r, result, txt = null) {
   const s = S();
   if (s.det.path === r.path) {
     patch("det", { tx: { ...result, pct: null }, ...(txt ? { txt } : {}),
-                   preview: { title: "Transcripción", lines: r.lines } });
+                   preview: { titleKey: "det.preview", lines: r.lines } });
     if (txt) loadDetPreview(txt);
   }
   if (!(s.view === "details" && s.det.path === r.path)) {
     const name = shortName(baseName(r.path));
-    toast(txt ? `Transcripción lista: «${name}».` : `«${name}»: ${result.status}`, txt ? G.check : G.warn);
+    toast(txt ? t("toast.txReady", { name }) : t("toast.withName", { name, text: result.status }), txt ? G.check : G.warn);
   }
   if (s.view === "history") loadHistory();
 }
@@ -703,7 +724,7 @@ function askRecordingName(path) {
       const r = await api.rename(path, name);
       $("#nameSave").disabled = false;
       if (r.error) { error.textContent = r.error; input.focus(); return; }
-      toast(`Grabación guardada como «${baseName(r.path)}».`, G.check);
+      toast(t("toast.savedAs", { name: baseName(r.path) }), G.check);
       finish(r.path);
     };
     $("#nameSave").onclick = save;
@@ -724,17 +745,16 @@ function detailsRenamed(path) {
 /** Al terminar de grabar: qué hacer con la transcripción en vivo. */
 function afterRecording(ev, segments) {
   if (ev.live_segments > 0 && segments.length) {
-    patch("det", { preview: { title: "Transcripción en vivo (sin guardar)", lines: segments.map(liveLine) } });
+    patch("det", { preview: { titleKey: "det.previewLive", lines: segments.map(liveLine) } });
     const model = S().config.model;
-    showDialog("¿Qué hacemos con la transcripción en vivo?",
-      `Se transcribieron ${segments.length} frases mientras grababas.`, [
-        { icon: G.check, title: "Guardar el texto en vivo", text: "Listo al instante. Un poco menos preciso.",
+    showDialog(t("live.dlgTitle"), tn("live.dlgText", segments.length), [
+        { icon: G.check, title: t("live.keep"), text: t("live.keepHint"),
           run: () => {
             const job = jobId("live");
-            startRecTx(ev.path, job, "Guardando…");
+            startRecTx(ev.path, job, t("live.saving"));
             api.send({ cmd: "save_live", path: ev.path, job, timestamps: S().config.timestamps });
           } },
-        { icon: G.refresh, title: "Transcribir de nuevo con más precisión", text: `Usa el modelo «${model}». Tarda más, pero queda mejor.`,
+        { icon: G.refresh, title: t("live.redo"), text: t("live.redoHint", { model }),
           run: startDetailsTx },
       ]);
   } else if (S().config.autoTranscribe) {
@@ -763,25 +783,25 @@ const closeDialog = () => show($("#dialog"), false);
 // =============================================================== eventos del motor
 
 window.onEngine = (ev) => {
-  const t = ev.type;
+  const type = ev.type;
   // Transcripciones: se enrutan a la pantalla que las pidió.
-  if (t.startsWith("tx_")) {
-    if (t === "tx_started") store.set({ txBusy: true });
-    if (["tx_done", "tx_error", "tx_canceled", "tx_nospeech"].includes(t)) store.set({ txBusy: false });
+  if (type.startsWith("tx_")) {
+    if (type === "tx_started") store.set({ txBusy: true });
+    if (["tx_done", "tx_error", "tx_canceled", "tx_nospeech"].includes(type)) store.set({ txBusy: false });
     if (ev.job && ev.job === S().tx.job) onPageTx(ev);
     if (ev.job && ev.job === S().recTx?.job) onRecTx(ev);
     return;
   }
   const rec = S().rec;
-  switch (t) {
+  switch (type) {
     case "status":
       if (!S().engine.ready) patch("engine", { status: ev.text });
       break;
     case "ready":
-      store.set({ engine: { ready: true, status: "Motor listo", error: false } });
+      store.set({ engine: { ready: true, status: t("engine.ready"), error: false } });
       break;
     case "engine_stopped":
-      store.set({ engine: { ready: false, status: "El motor se detuvo. Reinícialo en Configuración › Avanzado.", error: true } });
+      store.set({ engine: { ready: false, status: t("engine.stopped"), error: true } });
       break;
     case "devices": {
       const c = S().config;
@@ -802,8 +822,8 @@ window.onEngine = (ev) => {
     case "rec_started": {
       const c = S().config;
       store.set({ rec: { ...REC_IDLE, state: "recording", live: ev.live, audio: ev.audio || REC_IDLE.audio,
-                         liveStatus: ev.live ? "Preparando…" : "",
-                         sourceLabel: c.captureKind === "audio" ? "Solo audio" : currentSource()?.label || "" } });
+                         liveStatus: ev.live ? t("status.preparing") : "",
+                         sourceLabel: c.captureKind === "audio" ? t("capture.audio") : currentSource()?.label || "" } });
       go("live");
       break;
     }
@@ -811,7 +831,7 @@ window.onEngine = (ev) => {
     case "rec_levels": patch("rec", { elapsed: ev.elapsed, levels: { mic: ev.mic, sys: ev.sys } }); break;
     case "rec_paused": patch("rec", { state: "paused", paused: true }); break;
     case "rec_resumed": patch("rec", { state: "recording", paused: false }); break;
-    case "rec_source_closed": toast("La ventana que grababas se cerró. El audio sigue grabándose.", G.warn); break;
+    case "rec_source_closed": toast(t("toast.windowClosed"), G.warn); break;
     case "rec_saving": patch("rec", { saving: true }); break;
     case "live_status": patch("rec", { liveStatus: ev.text }); break;
     case "live_segment":
@@ -832,7 +852,7 @@ window.onEngine = (ev) => {
     case "rec_discarded":
       store.set({ rec: { ...REC_IDLE } });
       go("home");
-      toast("Grabación descartada.", G.close);
+      toast(t("toast.discarded"), G.close);
       break;
     case "rec_error":
       store.set({ rec: { ...REC_IDLE } });
@@ -894,7 +914,7 @@ $$("[data-capture]").forEach((b) => b.addEventListener("click", () => {
 }));
 $$("[data-audio]").forEach((b) => b.addEventListener("click", () => {
   if (b.dataset.audio === "none" && S().config.captureKind === "audio") {
-    toast("Con «Solo audio» necesitas al menos una fuente de sonido.", G.warn);
+    toast(t("toast.audioOnlyNeedsSource"), G.warn);
     return;
   }
   setConfig("audioMode", b.dataset.audio);
@@ -920,8 +940,7 @@ $("#liveCopy").addEventListener("click", () => copyText(S().rec.segments.map((s)
 // Transcribir
 const txInputs = { file: "", url: "" };  // lo escrito en cada modo (el campo es del usuario)
 $$("[data-src]").forEach((b) => b.addEventListener("click", () => {
-  const t = S().tx;
-  txInputs[t.mode] = $("#txInput").value;
+  txInputs[S().tx.mode] = $("#txInput").value;
   $("#txInput").value = txInputs[b.dataset.src];
   patch("tx", { mode: b.dataset.src });
 }));
@@ -933,7 +952,7 @@ $("#txInput").addEventListener("keydown", (e) => { if (e.key === "Enter") startP
 $("#txStart").addEventListener("click", startPageTx);
 $("#txCancel").addEventListener("click", () => {
   api.send({ cmd: "cancel_transcription" });
-  patch("tx", { status: "Cancelando…", running: false });
+  patch("tx", { status: t("status.canceling"), running: false });
 });
 $("#txCopy").addEventListener("click", () => copyText(S().tx.lines.join("\n")));
 $("#txOpenTxt").addEventListener("click", () => S().tx.txt && api.open_path(S().tx.txt));
@@ -958,12 +977,12 @@ $("#detPlay").addEventListener("click", () => api.open_path(S().det.path));
 $("#detView").addEventListener("click", () => api.open_path(S().det.path));
 $("#detOpenFolder").addEventListener("click", () => api.reveal(S().det.path));
 $("#detShare").addEventListener("click", async () => {
-  if (await api.copy_file(S().det.path)) toast("Archivo copiado. Pégalo (Ctrl+V) en Teams, WhatsApp, correo…", G.share);
+  if (await api.copy_file(S().det.path)) toast(t("toast.fileCopied"), G.share);
 });
 $("#detTx").addEventListener("click", startDetailsTx);
 $("#detViewTx").addEventListener("click", () => {
   const { path, txt } = S().det;
-  if (txt) showTranscript(txt, "Detalles de la grabación", () => openDetails(path));
+  if (txt) showTranscript(txt, "det.backLabel", () => openDetails(path));
 });
 $("#detCopy").addEventListener("click", () => copyText(S().det.preview.lines.join("\n")));
 $("#detDelete").addEventListener("click", () => confirmDelete(S().det.path, () => {
@@ -974,7 +993,7 @@ $("#detDelete").addEventListener("click", () => confirmDelete(S().det.path, () =
 // Cambiar nombre desde la ficha
 const nameInput = $("#detName");
 $("#detRename").addEventListener("click", () => {
-  if (recTxFor(S().det.path)) { toast("Espera a que termine la transcripción.", G.warn); return; }
+  if (recTxFor(S().det.path)) { toast(t("toast.waitTx"), G.warn); return; }
   nameInput.value = baseName(S().det.path);  // al editar se muestra el nombre completo
   nameInput.readOnly = false;
   nameInput.focus();
@@ -992,7 +1011,7 @@ nameInput.addEventListener("blur", async () => {
   const r = await api.rename(path, name);
   if (r.error) { renderDetails(S()); toast(r.error, G.warn); return; }
   detailsRenamed(r.path);
-  toast("Nombre actualizado.", G.check);
+  toast(t("toast.renamed"), G.check);
 });
 
 // Diálogo genérico
@@ -1011,41 +1030,46 @@ $("#cfgOutOpen").addEventListener("click", () => api.reveal(S().config.outputDir
 $("#cfgRefreshDevices").addEventListener("click", refreshDevices);
 $("#cfgLog").addEventListener("click", () => api.open_log());
 $("#cfgShortcuts").addEventListener("click", async () => {
-  if (await api.create_shortcuts()) toast("Accesos directos creados en el Escritorio y en el menú Inicio.", G.check);
-  else toast("No se pudieron crear los accesos directos.", G.warn);
+  if (await api.create_shortcuts()) toast(t("toast.shortcutsOk"), G.check);
+  else toast(t("toast.shortcutsFail"), G.warn);
 });
 $("#cfgRestart").addEventListener("click", async () => {
   const r = await api.restart_engine();
   if (r?.error) toast(r.error, G.warn);
-  else store.set({ engine: { ready: false, status: "Iniciando motor…", error: false } });
+  else store.set({ engine: { ready: false, status: t("engine.starting"), error: false } });
 });
-$("#cfgReset").addEventListener("click", () => showDialog("Restablecer configuración",
-  "Se vuelve a los valores por defecto (los dispositivos de audio se mantienen).", [
-    { icon: G.refresh, title: "Restablecer", text: "Carpeta, video, audio y transcripción por defecto.",
+$("#cfgReset").addEventListener("click", () => showDialog(t("set.reset"), t("set.resetText"), [
+    { icon: G.refresh, title: t("set.resetOption"), text: t("set.resetOptionHint"),
       run: async () => {
         store.set({ config: await api.reset_config(), source: null });
-        toast("Configuración restablecida.", G.refresh);
+        toast(t("toast.reset"), G.refresh);
       } },
   ]));
 
 // ========================================================================= arranque
+
+// Idioma de la app la primera vez que se abre (después se cambia en Configuración › General).
+$$("#langDialog [data-lang]").forEach((b) => b.addEventListener("click", () => {
+  show($("#langDialog"), false);
+  setConfig("uiLanguage", b.dataset.lang);
+}));
 
 window.addEventListener("pywebviewready", async () => {
   api = window.pywebview.api;
   const s = await api.init();
   // Accesibilidad: los botones que solo tienen icono usan su title como nombre.
   for (const b of $$("button[title]:not([aria-label])")) b.setAttribute("aria-label", b.title);
-  // Las opciones fijas de los selectores se llenan una sola vez.
-  for (const sel of $$("select[data-options]")) {
-    sel.innerHTML = OPTIONS[sel.dataset.options].map(([v, label]) => `<option value="${esc(v)}">${esc(label)}</option>`).join("");
-  }
+  setLang(s.config.uiLanguage);
+  fillOptions();
   store.set({
+    lang: LANG,
     config: s.config,
-    engine: { ready: s.ready, status: s.status, error: s.status.includes("detuvo") },
+    engine: { ready: s.ready, status: s.status, error: !!s.engineStopped },
     monitors: s.monitors || [],
     devices: s.devices?.speakers ? s.devices : { speakers: [], mics: [] },
     version: s.version,
     enginePath: s.engine,
   });
   go("home");
+  if (!s.config.uiLanguage) show($("#langDialog"), true);
 });
