@@ -39,6 +39,9 @@ TITLE = "Transcriptor"
 BAR_TITLE = "Transcriptor · grabando"
 # Tamaño inicial de la barra flotante; después se ajusta sola a su contenido (BarApi.fit).
 BAR_SIZE = (220, 46)
+# pywebview pone 200x100 como tamaño mínimo por defecto y Windows no deja achicar la ventana
+# por debajo: la barra quedaba con espacio vacío abajo y la compacta no bajaba de 200 de ancho.
+BAR_MIN = (60, 30)
 BAR_MAX_PX = 1600  # tope de ancho/alto que acepta fit(), en px físicos
 NO_WINDOW, BELOW_NORMAL = 0x08000000, 0x00004000
 MEDIA_EXT = {".mp4", ".mkv", ".mov", ".webm", ".avi", ".mp3", ".m4a", ".wav"}
@@ -364,8 +367,8 @@ class App:
 
         self.bar = webview.create_window(
             BAR_TITLE, url=str(UI / "bar.html"), js_api=BarApi(self), width=BAR_SIZE[0],
-            height=BAR_SIZE[1], frameless=True, easy_drag=False, on_top=True, resizable=False,
-            background_color="#161B22", focus=False)
+            height=BAR_SIZE[1], min_size=BAR_MIN, frameless=True, easy_drag=False, on_top=True,
+            resizable=False, background_color="#161B22", focus=False)
 
         def setup_bar(bar=self.bar):
             h = winutil.hwnd_of(bar)
