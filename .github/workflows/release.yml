@@ -67,7 +67,7 @@ jobs:
 
       - name: Subir MSI sin firmar
         id: unsigned
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: msi-sin-firmar
           path: dist/Transcriptor-${{ steps.version.outputs.version }}.msi
@@ -100,7 +100,7 @@ jobs:
 
       - name: Guardar paquetes como artefactos del workflow
         if: ${{ github.ref_type != 'tag' }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: paquetes
           path: |
